@@ -6,7 +6,7 @@ from datetime import date
 # CONFIG
 # ============================================
 SUPABASE_URL = "https://gojnzhpapqzodzadetek.supabase.co"
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdvam56aHBhcHF6b2R6YWRldGVrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA5MzU4MTcsImV4cCI6MjA5NjUxMTgxN30.5Y2-MXRBmPt-ps1JZ-52qYi2g9lQOED_Lb69uVAwzxk"  # paste your eyJ... key here
+SUPABASE_KEY = "YOUR_ANON_KEY"  # paste your eyJ... key here
 
 # ============================================
 # SUPABASE CLIENT
@@ -349,8 +349,246 @@ if page == "🏠  Home":
 # ============================================
 elif page == "📝  Daily Log":
     st.markdown('<div class="section-header">📝 Daily Log</div>', unsafe_allow_html=True)
-    st.markdown('<div class="section-sub">coming in part 2</div>', unsafe_allow_html=True)
-    st.info("This section is being built. Check back after Part 2.")
+    today = date.today()
+    st.markdown(f'<div class="section-sub">{today.strftime("%A, %B %d %Y")}</div>', unsafe_allow_html=True)
+
+    # ---- Init session state lists ----
+    if "accomplishments" not in st.session_state:
+        st.session_state.accomplishments = []
+    if "media_list" not in st.session_state:
+        st.session_state.media_list = []
+    if "edit_mode" not in st.session_state:
+        st.session_state.edit_mode = False
+
+    # ---- Check if today already logged ----
+    try:
+        existing = supabase.table("daily_logs").select("*").eq("date", str(today)).execute()
+        already_logged = len(existing.data) > 0
+        existing_entry = existing.data[0] if already_logged else None
+    except:
+        already_logged = False
+        existing_entry = None
+
+    # ---- VIEW MODE (already logged, not editing) ----
+    if already_logged and not st.session_state.edit_mode:
+        e = existing_entry
+        st.markdown(f'<div class="section-sub">✅ Today\'s entry is saved.</div>', unsafe_allow_html=True)
+
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.markdown(f"**Mood** &nbsp; {mood_badge(e['mood_score'])}", unsafe_allow_html=True)
+        with col2:
+            st.markdown(f"**Clarity** &nbsp; {clarity_badge(e['mental_clarity'])}", unsafe_allow_html=True)
+        with col3:
+            st.markdown(f"**Emotion** &nbsp; `{e['dominant_emotion']}`", unsafe_allow_html=True)
+
+        st.markdown('<hr class="divider">', unsafe_allow_html=True)
+
+        st.markdown(f"""
+        <div class="card">
+            <div style="font-size:0.75rem;color:#555;font-family:'JetBrains Mono',monospace;margin-bottom:0.5rem;">SELF ASSESSMENT</div>
+            <div style="color:#ccc;">{e.get('self_assessment','—')}</div>
+        </div>
+        <div class="card">
+            <div style="font-size:0.75rem;color:#555;font-family:'JetBrains Mono',monospace;margin-bottom:0.5rem;">DAILY SUMMARY</div>
+            <div style="color:#ccc;">{e.get('daily_summary','—')}</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        accs = e.get('accomplishments') or []
+        media = e.get('media_consumed') or []
+
+        col1, col2 = st.columns(2)
+        with col1:
+            st.markdown('<div class="card"><div style="font-size:0.75rem;color:#555;font-family:\'JetBrains Mono\',monospace;margin-bottom:0.5rem;">ACCOMPLISHMENTS</div>', unsafe_allow_html=True)
+            for a in accs:
+                st.markdown(f"&nbsp; ✦ {a}")
+            st.markdown('</div>', unsafe_allow_html=True)
+        with col2:
+            st.markdown('<div class="card"><div style="font-size:0.75rem;color:#555;font-family:\'JetBrains Mono\',monospace;margin-bottom:0.5rem;">MEDIA CONSUMED</div>', unsafe_allow_html=True)
+            for m in media:
+                st.markdown(f"&nbsp; 🎬 {m}")
+            st.markdown('</div>', unsafe_allow_html=True)
+
+        st.markdown('<hr class="divider">', unsafe_allow_html=True)
+
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            st.markdown(f"**Sleep** &nbsp; `{e.get('sleep_duration','—')} hrs`")
+        with col2:
+            st.markdown(f"**Physical** &nbsp; {physical_badge(e.get('physical_state','neutral'))}", unsafe_allow_html=True)
+        with col3:
+            st.markdown(f"**Mental** &nbsp; {mental_badge(e.get('mental_state','stable'))}", unsafe_allow_html=True)
+        with col4:
+            st.markdown(f"**Spent** &nbsp; `{e.get('daily_spending',0)} UZS`")
+
+        st.markdown('<hr class="divider">', unsafe_allow_html=True)
+        st.markdown(f"**Good deed:** {e.get('good_deed','—')}")
+
+        if st.button("✏️ Edit Today's Entry"):
+            st.session_state.edit_mode = True
+            st.session_state.accomplishments = e.get('accomplishments') or []
+            st.session_state.media_list = e.get('media_consumed') or []
+            st.rerun()
+
+    # ---- FORM MODE (new entry or editing) ----
+    else:
+        if already_logged:
+            st.info("Editing today's entry. Changes will overwrite the saved record.")
+            e = existing_entry
+        else:
+            e = {}
+
+        # --- Section A: Emotional & Cognitive ---
+        st.markdown('<div style="font-size:0.75rem;color:#555;font-family:\'JetBrains Mono\',monospace;margin-bottom:0.8rem;letter-spacing:1px;">A · EMOTIONAL & COGNITIVE STATE</div>', unsafe_allow_html=True)
+
+        col1, col2 = st.columns([2, 1])
+        with col1:
+            mood_score = st.slider("Mood Score", 1, 10, e.get('mood_score', 5))
+        with col2:
+            st.markdown(f"<br>{mood_badge(mood_score)}", unsafe_allow_html=True)
+
+        col1, col2 = st.columns(2)
+        with col1:
+            clarity_options = ["foggy", "normal", "sharp"]
+            clarity_default = clarity_options.index(e.get('mental_clarity', 'normal'))
+            mental_clarity = st.selectbox("Mental Clarity", clarity_options, index=clarity_default)
+        with col2:
+            st.markdown(f"<br>{clarity_badge(mental_clarity)}", unsafe_allow_html=True)
+
+        dominant_emotion = st.text_input("Dominant Emotion", value=e.get('dominant_emotion', ''), placeholder="e.g. anxious, hopeful, calm...")
+        self_assessment = st.text_area("Self Assessment of the Day", value=e.get('self_assessment', ''), height=100, placeholder="How do you feel about today overall?")
+
+        st.markdown('<hr class="divider">', unsafe_allow_html=True)
+
+        # --- Section B: Activity ---
+        st.markdown('<div style="font-size:0.75rem;color:#555;font-family:\'JetBrains Mono\',monospace;margin-bottom:0.8rem;letter-spacing:1px;">B · ACTIVITY SUMMARY</div>', unsafe_allow_html=True)
+
+        daily_summary = st.text_area("Daily Summary", value=e.get('daily_summary', ''), height=100, placeholder="What happened today?")
+        good_deed = st.text_input("Good Deed of the Day", value=e.get('good_deed', ''), placeholder="One good thing you did for someone...")
+
+        # Accomplishments list
+        st.markdown("**Accomplishments**")
+        acc_col1, acc_col2 = st.columns([4, 1])
+        with acc_col1:
+            new_acc = st.text_input("Add accomplishment", key="new_acc_input", label_visibility="collapsed", placeholder="What did you accomplish today?")
+        with acc_col2:
+            if st.button("＋ Add", key="add_acc"):
+                if new_acc.strip():
+                    st.session_state.accomplishments.append(new_acc.strip())
+                    st.rerun()
+
+        for i, acc in enumerate(st.session_state.accomplishments):
+            c1, c2 = st.columns([6, 1])
+            with c1:
+                st.markdown(f"&nbsp; ✦ {acc}")
+            with c2:
+                if st.button("✕", key=f"del_acc_{i}"):
+                    st.session_state.accomplishments.pop(i)
+                    st.rerun()
+
+        st.markdown('<hr class="divider">', unsafe_allow_html=True)
+
+        # --- Section C: Health ---
+        st.markdown('<div style="font-size:0.75rem;color:#555;font-family:\'JetBrains Mono\',monospace;margin-bottom:0.8rem;letter-spacing:1px;">C · HEALTH</div>', unsafe_allow_html=True)
+
+        col1, col2 = st.columns(2)
+        with col1:
+            sleep_duration = st.number_input("Sleep Duration (hours)", min_value=0.0, max_value=24.0, step=0.5, value=float(e.get('sleep_duration') or 7.0))
+            phone_off = st.time_input("Phone Off Time", value=None)
+        with col2:
+            phone_on = st.time_input("Phone On Time", value=None)
+            dream_log = st.text_input("Dream Log (optional)", value=e.get('dream_log', ''), placeholder="Any dreams worth noting?")
+
+        col1, col2 = st.columns(2)
+        with col1:
+            phys_options = ["tired", "neutral", "energized"]
+            phys_default = phys_options.index(e.get('physical_state', 'neutral'))
+            physical_state = st.selectbox("Physical State", phys_options, index=phys_default)
+            st.markdown(physical_badge(physical_state), unsafe_allow_html=True)
+        with col2:
+            ment_options = ["calm", "stable", "stressed", "heavy"]
+            ment_default = ment_options.index(e.get('mental_state', 'stable'))
+            mental_state = st.selectbox("Mental State", ment_options, index=ment_default)
+            st.markdown(mental_badge(mental_state), unsafe_allow_html=True)
+
+        st.markdown('<hr class="divider">', unsafe_allow_html=True)
+
+        # --- Section D: Spending ---
+        st.markdown('<div style="font-size:0.75rem;color:#555;font-family:\'JetBrains Mono\',monospace;margin-bottom:0.8rem;letter-spacing:1px;">D · SPENDING</div>', unsafe_allow_html=True)
+
+        col1, col2 = st.columns(2)
+        with col1:
+            daily_spending = st.number_input("Daily Spending Total (UZS)", min_value=0.0, step=1000.0, value=float(e.get('daily_spending') or 0.0))
+        with col2:
+            spending_notes = st.text_input("Spending Notes", value=e.get('spending_notes', ''), placeholder="What did you spend on?")
+
+        st.markdown('<hr class="divider">', unsafe_allow_html=True)
+
+        # --- Section E: Media ---
+        st.markdown('<div style="font-size:0.75rem;color:#555;font-family:\'JetBrains Mono\',monospace;margin-bottom:0.8rem;letter-spacing:1px;">E · MEDIA CONSUMED</div>', unsafe_allow_html=True)
+
+        med_col1, med_col2 = st.columns([4, 1])
+        with med_col1:
+            new_media = st.text_input("Add media", key="new_media_input", label_visibility="collapsed", placeholder="Anime / movie / series title...")
+        with med_col2:
+            if st.button("＋ Add", key="add_media"):
+                if new_media.strip():
+                    st.session_state.media_list.append(new_media.strip())
+                    st.rerun()
+
+        for i, m in enumerate(st.session_state.media_list):
+            c1, c2 = st.columns([6, 1])
+            with c1:
+                st.markdown(f"&nbsp; 🎬 {m}")
+            with c2:
+                if st.button("✕", key=f"del_media_{i}"):
+                    st.session_state.media_list.pop(i)
+                    st.rerun()
+
+        st.markdown('<hr class="divider">', unsafe_allow_html=True)
+
+        # --- Save Button ---
+        if st.button("💾 Save Day", type="primary"):
+            if not dominant_emotion.strip():
+                st.error("Please enter your dominant emotion.")
+            else:
+                record = {
+                    "date": str(today),
+                    "mood_score": mood_score,
+                    "mental_clarity": mental_clarity,
+                    "dominant_emotion": dominant_emotion.strip(),
+                    "self_assessment": self_assessment.strip(),
+                    "daily_summary": daily_summary.strip(),
+                    "accomplishments": st.session_state.accomplishments,
+                    "good_deed": good_deed.strip(),
+                    "sleep_duration": sleep_duration,
+                    "phone_off_time": str(phone_off) if phone_off else None,
+                    "phone_on_time": str(phone_on) if phone_on else None,
+                    "dream_log": dream_log.strip(),
+                    "physical_state": physical_state,
+                    "mental_state": mental_state,
+                    "daily_spending": daily_spending,
+                    "spending_notes": spending_notes.strip(),
+                    "media_consumed": st.session_state.media_list,
+                }
+                try:
+                    if already_logged:
+                        supabase.table("daily_logs").update(record).eq("date", str(today)).execute()
+                        st.success("✅ Entry updated.")
+                    else:
+                        supabase.table("daily_logs").insert(record).execute()
+                        st.success("✅ Day saved to your archive.")
+                    st.session_state.edit_mode = False
+                    st.session_state.accomplishments = []
+                    st.session_state.media_list = []
+                    st.rerun()
+                except Exception as ex:
+                    st.error(f"Error saving: {ex}")
+
+        if already_logged and st.button("Cancel"):
+            st.session_state.edit_mode = False
+            st.rerun()
 
 elif page == "📖  Reading Log":
     st.markdown('<div class="section-header">📖 Reading Log</div>', unsafe_allow_html=True)
