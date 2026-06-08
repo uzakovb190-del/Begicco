@@ -6,7 +6,7 @@ from datetime import date
 # CONFIG
 # ============================================
 SUPABASE_URL = "https://gojnzhpapqzodzadetek.supabase.co"
-SUPABASE_KEY = "YOUR_ANON_KEY"  # paste your eyJ... key here
+SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdvam56aHBhcHF6b2R6YWRldGVrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA5MzU4MTcsImV4cCI6MjA5NjUxMTgxN30.5Y2-MXRBmPt-ps1JZ-52qYi2g9lQOED_Lb69uVAwzxk"  # paste your eyJ... key here
 
 # ============================================
 # SUPABASE CLIENT
