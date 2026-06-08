@@ -245,6 +245,32 @@ def significance_badge(score: int) -> str:
 # ============================================
 # SIDEBAR NAVIGATION
 # ============================================
+# ============================================
+# TOP NAV BAR (always visible)
+# ============================================
+nav_options = [
+    "🏠  Home",
+    "📝  Daily Log",
+    "📖  Reading Log",
+    "🚨  Life Event",
+    "🛍️  Purchase Tracker",
+    "💫  Wish List",
+    "🎯  Goals",
+    "🏆  Outcomes",
+    "📜  Archive",
+]
+
+top_col1, top_col2 = st.columns([1, 3])
+with top_col1:
+    st.markdown('<div style="font-family:\'Syne\',sans-serif;font-size:1.1rem;font-weight:800;color:#fff;padding-top:0.4rem;">🗂️ Life Archive</div>', unsafe_allow_html=True)
+with top_col2:
+    page = st.selectbox("Navigate", nav_options, label_visibility="collapsed")
+
+st.markdown('<hr style="border-color:#2a2a2a;margin:0.5rem 0 1.5rem 0;">', unsafe_allow_html=True)
+
+# ============================================
+# SIDEBAR (mirrors top nav)
+# ============================================
 with st.sidebar:
     st.markdown("""
         <div style="padding: 1rem 0 1.5rem 0;">
@@ -258,21 +284,16 @@ with st.sidebar:
         <hr style="border-color: #2a2a2a; margin-bottom: 1rem;">
     """, unsafe_allow_html=True)
 
-    page = st.radio(
+    sidebar_page = st.radio(
         "Navigation",
-        options=[
-            "🏠  Home",
-            "📝  Daily Log",
-            "📖  Reading Log",
-            "🚨  Life Event",
-            "🛍️  Purchase Tracker",
-            "💫  Wish List",
-            "🎯  Goals",
-            "🏆  Outcomes",
-            "📜  Archive",
-        ],
+        options=nav_options,
+        index=nav_options.index(page),
         label_visibility="collapsed"
     )
+
+    # If sidebar selection differs, use it
+    if sidebar_page != page:
+        page = sidebar_page
 
     st.markdown("""
         <hr style="border-color: #2a2a2a; margin-top: 1rem;">
