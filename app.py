@@ -951,8 +951,11 @@ elif page == "🛍️  Purchase Tracker":
 
     if "purchase_view" not in st.session_state:
         st.session_state["purchase_view"] = "➕ Add Purchase"
+    if "editing_purchase" not in st.session_state:
+        st.session_state["editing_purchase"] = None
 
     view = st.radio("Purchase View", ["🔴 Pending Review", "📋 All Purchases", "➕ Add Purchase"],
+                    index=["🔴 Pending Review", "📋 All Purchases", "➕ Add Purchase"].index(st.session_state["purchase_view"]),
                     horizontal=True, label_visibility="collapsed")
     st.session_state["purchase_view"] = view
     st.markdown('<hr class="divider">', unsafe_allow_html=True)
@@ -973,6 +976,7 @@ elif page == "🛍️  Purchase Tracker":
             st.markdown(f'<div class="section-sub">🔴 {len(pending)} purchase(s) waiting for your honest review</div>', unsafe_allow_html=True)
             for p in pending:
                 days_overdue = (date.today() - date.fromisoformat(p["review_due_date"])).days
+                currency = p.get("currency", "UZS")
                 st.markdown(f"""
                 <div class="card" style="border-left: 3px solid #f87171;">
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.4rem;">
@@ -983,17 +987,17 @@ elif page == "🛍️  Purchase Tracker":
                         </div>
                     </div>
                     <div style="font-size:0.85rem;color:#888;font-family:'JetBrains Mono',monospace;">
-                        {p.get('amount',0):,.0f} {p.get('currency','UZS')} · bought {p.get('purchase_date','')} · expected: {p.get('expected_value','')}
+                        {p.get('amount',0):,.0f} {currency} · bought {p.get('purchase_date','')} · expected: {p.get('expected_value','')}
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
 
                 with st.expander(f"📝 Review '{p['item_name']}'"):
-                    r_usage     = st.selectbox("How often did you use it?", ["never", "once", "few times", "regularly", "daily"], key=f"usage_{p['id']}")
-                    r_actual    = st.text_input("Actual use case", key=f"actual_{p['id']}", placeholder="What did you actually use it for?")
-                    r_sat       = st.slider("Satisfaction (1–5)", 1, 5, 3, key=f"sat_{p['id']}")
-                    r_regret    = st.slider("Regret level (1–5)", 1, 5, 2, key=f"regret_{p['id']}")
-                    r_worth     = st.radio("Worth it?", ["Yes", "No"], key=f"worth_{p['id']}", horizontal=True)
+                    r_usage      = st.selectbox("How often did you use it?", ["never", "once", "few times", "regularly", "daily"], key=f"usage_{p['id']}")
+                    r_actual     = st.text_input("Actual use case", key=f"actual_{p['id']}", placeholder="What did you actually use it for?")
+                    r_sat        = st.slider("Satisfaction (1–5)", 1, 5, 3, key=f"sat_{p['id']}")
+                    r_regret     = st.slider("Regret level (1–5)", 1, 5, 2, key=f"regret_{p['id']}")
+                    r_worth      = st.radio("Worth it?", ["Yes", "No"], key=f"worth_{p['id']}", horizontal=True)
                     r_reflection = st.text_area("Reflection", key=f"reflection_{p['id']}", height=80, placeholder="What did you learn from this purchase?")
 
                     if st.button("✅ Submit Review", key=f"review_{p['id']}", type="primary"):
@@ -1025,6 +1029,7 @@ elif page == "🛍️  Purchase Tracker":
             st.info("No purchases logged yet.")
         else:
             for p in all_purchases:
+                currency = p.get("currency", "UZS")
                 if not p.get("phase2_completed"):
                     border = "#444"
                     status_badge = '<span class="badge badge-grey">⏳ Pending Review</span>'
@@ -1045,15 +1050,16 @@ elif page == "🛍️  Purchase Tracker":
                         </div>
                     </div>
                     <div style="font-size:0.85rem;color:#888;font-family:'JetBrains Mono',monospace;">
-                        {p.get('amount',0):,.0f} {p.get('currency','UZS')} · {p.get('purchase_date','')} · {p.get('emotional_state_post_purchase','')}
+                        {p.get('amount',0):,.0f} {currency} · {p.get('purchase_date','')} · {p.get('emotional_state_post_purchase','')}
                     </div>
                     {f'<div style="margin-top:0.4rem;font-size:0.8rem;color:#666;">💭 {p["review_reflection"]}</div>' if p.get("review_reflection") else ''}
                 </div>
                 """, unsafe_allow_html=True)
+
                 col_edit, col_del = st.columns([1, 1])
                 with col_edit:
                     if st.button("✏️ Edit", key=f"edit_purchase_{p['id']}"):
-                        st.session_state["editing_purchase"] = p
+                        st.session_state["editing_purchase"] = dict(p)
                         st.session_state["purchase_view"] = "➕ Add Purchase"
                         st.rerun()
                 with col_del:
@@ -1074,7 +1080,7 @@ elif page == "🛍️  Purchase Tracker":
                             st.rerun()
 
     # ============================================================
-    # ADD PURCHASE
+    # ADD / EDIT PURCHASE
     # ============================================================
     else:
         editing_p = st.session_state.get("editing_purchase", None)
@@ -1084,19 +1090,20 @@ elif page == "🛍️  Purchase Tracker":
         with st.form("purchase_form"):
             p_name     = st.text_input("Item Name", value=editing_p["item_name"] if editing_p else "", placeholder="e.g. AirPods, lunch, new jacket...")
             categories = ["food", "clothing", "tech", "entertainment", "transport", "other"]
-            p_category = st.selectbox("Category", categories, index=categories.index(editing_p["category"]) if editing_p else 0)
+            p_category = st.selectbox("Category", categories, index=categories.index(editing_p["category"]) if editing_p and editing_p.get("category") in categories else 0)
             currencies = ["UZS", "USD", "EUR", "RUB", "GBP", "JPY"]
             col_amt, col_cur = st.columns([3, 1])
             with col_amt:
-                p_amount = st.number_input("Amount", min_value=0.0, step=1000.0, value=float(editing_p["amount"]) if editing_p else 0.0)
+                p_amount = st.number_input("Amount", min_value=0.0, step=1000.0, value=float(editing_p["amount"]) if editing_p and editing_p.get("amount") else 0.0)
             with col_cur:
-                p_currency = st.selectbox("Currency", currencies, index=currencies.index(editing_p.get("currency","UZS")) if editing_p else 0)
-            p_reason   = st.text_input("Reason for buying", value=editing_p.get("reason_for_purchase","") if editing_p else "", placeholder="Why did you buy this?")
+                cur_index = currencies.index(editing_p.get("currency", "UZS")) if editing_p and editing_p.get("currency") in currencies else 0
+                p_currency = st.selectbox("Currency", currencies, index=cur_index)
+            p_reason   = st.text_input("Reason for buying", value=editing_p.get("reason_for_purchase", "") if editing_p else "", placeholder="Why did you buy this?")
             emotions   = ["planned", "impulse", "influenced", "necessity"]
-            p_emotion  = st.selectbox("Emotional state at purchase", emotions, index=emotions.index(editing_p["emotional_state_post_purchase"]) if editing_p else 0)
-            p_expected = st.text_input("Expected value", value=editing_p.get("expected_value","") if editing_p else "", placeholder="What do you expect to get from this?")
+            p_emotion  = st.selectbox("Emotional state at purchase", emotions, index=emotions.index(editing_p["emotional_state_post_purchase"]) if editing_p and editing_p.get("emotional_state_post_purchase") in emotions else 0)
+            p_expected = st.text_input("Expected value", value=editing_p.get("expected_value", "") if editing_p else "", placeholder="What do you expect to get from this?")
             from datetime import datetime, timedelta
-            default_date = datetime.strptime(editing_p["purchase_date"], "%Y-%m-%d").date() if editing_p else date.today()
+            default_date = datetime.strptime(editing_p["purchase_date"], "%Y-%m-%d").date() if editing_p and editing_p.get("purchase_date") else date.today()
             p_date     = st.date_input("Purchase Date", value=default_date)
             submitted  = st.form_submit_button("💾 Update Purchase" if editing_p else "💾 Log Purchase")
 
@@ -1105,6 +1112,7 @@ elif page == "🛍️  Purchase Tracker":
                 st.error("Please enter an item name.")
             else:
                 try:
+                    from datetime import timedelta
                     record = {
                         "item_name": p_name.strip(),
                         "category": p_category,
@@ -1131,33 +1139,8 @@ elif page == "🛍️  Purchase Tracker":
 
         if editing_p_id and st.button("Cancel", key="cancel_purchase_form"):
             st.session_state["editing_purchase"] = None
+            st.session_state["purchase_view"] = "📋 All Purchases"
             st.rerun()
-
-        if editing_p and st.button("Cancel", key="cancel_edit_purchase"):
-            st.session_state["editing_purchase"] = None
-            st.rerun()
-            if not p_name.strip():
-                st.error("Please enter an item name.")
-            else:
-                from datetime import timedelta
-                try:
-                    supabase.table("purchases").insert({
-                        "item_name": p_name.strip(),
-                        "category": p_category,
-                        "amount": p_amount,
-                        "reason_for_purchase": p_reason.strip(),
-                        "emotional_state_post_purchase": p_emotion,
-                        "expected_value": p_expected.strip(),
-                        "purchase_date": str(p_date),
-                        "review_due_date": str(p_date + timedelta(days=14)),
-                        "phase2_completed": False
-                    }).execute()
-                    st.success(f"✅ Purchase logged. Review reminder set for {p_date + timedelta(days=14)}.")
-                    st.session_state["purchase_view"] = "📋 All Purchases"
-                    st.rerun()
-                except Exception as ex:
-                    st.error(f"Error: {ex}")
-
 elif page == "💫  Wish List":
     st.markdown('<div class="section-header">💫 Wish List</div>', unsafe_allow_html=True)
     st.markdown('<div class="section-sub">coming in part 4</div>', unsafe_allow_html=True)
