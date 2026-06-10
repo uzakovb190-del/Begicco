@@ -1046,7 +1046,7 @@ elif page == "🛍️  Purchase Tracker":
                         </div>
                     </div>
                     <div style="font-size:0.85rem;color:#888;font-family:'JetBrains Mono',monospace;">
-                        {p.get('amount',0):,.0f} UZS · {p.get('purchase_date','')} · {p.get('emotional_state_post_purchase','')}
+                        {p.get('amount',0):,.0f} {p.get('currency','UZS')} · {p.get('purchase_date','')} · {p.get('emotional_state_post_purchase','')}
                     </div>
                     {f'<div style="margin-top:0.4rem;font-size:0.8rem;color:#666;">💭 {p["review_reflection"]}</div>' if p.get("review_reflection") else ''}
                 </div>
