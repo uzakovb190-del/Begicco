@@ -1051,22 +1051,90 @@ elif page == "🛍️  Purchase Tracker":
                     {f'<div style="margin-top:0.4rem;font-size:0.8rem;color:#666;">💭 {p["review_reflection"]}</div>' if p.get("review_reflection") else ''}
                 </div>
                 """, unsafe_allow_html=True)
+                col_edit, col_del = st.columns([1, 1])
+                with col_edit:
+                    if st.button("✏️ Edit", key=f"edit_purchase_{p['id']}"):
+                        st.session_state["editing_purchase"] = p
+                        st.session_state["purchase_view"] = "➕ Add Purchase"
+                        st.rerun()
+                with col_del:
+                    if st.button("🗑️ Delete", key=f"del_purchase_{p['id']}"):
+                        st.session_state[f"confirm_del_p_{p['id']}"] = True
+                        st.rerun()
+                if st.session_state.get(f"confirm_del_p_{p['id']}", False):
+                    st.warning(f"Delete **{p['item_name']}**? This cannot be undone.")
+                    c1, c2 = st.columns(2)
+                    with c1:
+                        if st.button("Yes, delete", key=f"yes_del_p_{p['id']}"):
+                            supabase.table("purchases").delete().eq("id", p["id"]).execute()
+                            st.session_state[f"confirm_del_p_{p['id']}"] = False
+                            st.rerun()
+                    with c2:
+                        if st.button("Cancel", key=f"cancel_del_p_{p['id']}"):
+                            st.session_state[f"confirm_del_p_{p['id']}"] = False
+                            st.rerun()
 
     # ============================================================
     # ADD PURCHASE
     # ============================================================
     else:
-        st.markdown("#### What did you buy?")
+        editing_p = st.session_state.get("editing_purchase", None)
+        st.markdown(f"#### {'✏️ Editing Purchase' if editing_p else 'What did you buy?'}")
 
-        p_name     = st.text_input("Item Name", placeholder="e.g. AirPods, lunch, new jacket...")
-        p_category = st.selectbox("Category", ["food", "clothing", "tech", "entertainment", "transport", "other"])
-        p_amount   = st.number_input("Amount (UZS)", min_value=0.0, step=1000.0)
-        p_reason   = st.text_input("Reason for buying", placeholder="Why did you buy this?")
-        p_emotion  = st.selectbox("Emotional state at purchase", ["planned", "impulse", "influenced", "necessity"])
-        p_expected = st.text_input("Expected value", placeholder="What do you expect to get from this?")
-        p_date     = st.date_input("Purchase Date", value=date.today())
+        p_name     = st.text_input("Item Name", value=editing_p["item_name"] if editing_p else "", placeholder="e.g. AirPods, lunch, new jacket...")
+        
+        categories = ["food", "clothing", "tech", "entertainment", "transport", "other"]
+        p_category = st.selectbox("Category", categories, index=categories.index(editing_p["category"]) if editing_p else 0)
+        
+        currencies = ["UZS", "USD", "EUR", "RUB", "GBP", "JPY"]
+        col_amt, col_cur = st.columns([3, 1])
+        with col_amt:
+            p_amount = st.number_input("Amount", min_value=0.0, step=1000.0, value=float(editing_p["amount"]) if editing_p else 0.0)
+        with col_cur:
+            p_currency = st.selectbox("Currency", currencies, index=0)
+        p_reason   = st.text_input("Reason for buying", value=editing_p.get("reason_for_purchase","") if editing_p else "", placeholder="Why did you buy this?")
+        
+        emotions = ["planned", "impulse", "influenced", "necessity"]
+        p_emotion  = st.selectbox("Emotional state at purchase", emotions, index=emotions.index(editing_p["emotional_state_post_purchase"]) if editing_p else 0)
+        
+        p_expected = st.text_input("Expected value", value=editing_p.get("expected_value","") if editing_p else "", placeholder="What do you expect to get from this?")
+        
+        from datetime import datetime, timedelta
+        default_date = datetime.strptime(editing_p["purchase_date"], "%Y-%m-%d").date() if editing_p else date.today()
+        p_date     = st.date_input("Purchase Date", value=default_date)
 
-        if st.button("💾 Log Purchase", type="primary"):
+        if st.button("💾 Update Purchase" if editing_p else "💾 Log Purchase", type="primary"):
+            if not p_name.strip():
+                st.error("Please enter an item name.")
+            else:
+                from datetime import timedelta
+                try:
+                    record = {
+                        "item_name": p_name.strip(),
+                        "category": p_category,
+                        "amount": p_amount,
+                        "reason_for_purchase": p_reason.strip(),
+                        "emotional_state_post_purchase": p_emotion,
+                        "expected_value": p_expected.strip(),
+                        "purchase_date": str(p_date),
+                        "review_due_date": str(p_date + timedelta(days=14)),
+                    }
+                    if editing_p:
+                        supabase.table("purchases").update(record).eq("id", editing_p["id"]).execute()
+                        st.success("✅ Purchase updated.")
+                        st.session_state["editing_purchase"] = None
+                    else:
+                        record["phase2_completed"] = False
+                        supabase.table("purchases").insert(record).execute()
+                        st.success(f"✅ Purchase logged. Review set for {p_date + timedelta(days=14)}.")
+                    st.session_state["purchase_view"] = "📋 All Purchases"
+                    st.rerun()
+                except Exception as ex:
+                    st.error(f"Error: {ex}")
+
+        if editing_p and st.button("Cancel"):
+            st.session_state["editing_purchase"] = None
+            st.rerun()
             if not p_name.strip():
                 st.error("Please enter an item name.")
             else:
