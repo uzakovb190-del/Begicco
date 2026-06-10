@@ -677,20 +677,13 @@ elif page == "📖  Reading Log":
                     """, unsafe_allow_html=True)
 
                 with col2:
-                    st.markdown(f"""
-                    <div class="card" style="margin-bottom:0.5rem;">
-                        <div style="display:flex;align-items:center;gap:0.8rem;margin-bottom:0.4rem;">
-                            <span style="font-size:1.1rem;font-weight:800;color:#fff;">{book['title']}</span>
-                            {inactive_warning}
-                        </div>
-                        <div style="font-size:0.8rem;color:#666;font-family:'JetBrains Mono',monospace;">
-                            {book.get('author','Unknown')} &nbsp;·&nbsp; {total_read} / {total_pages} pages &nbsp;·&nbsp; {len(sessions)} sessions
-                        </div>
-                    </div>
-                    """, unsafe_allow_html=True)
+                    st.markdown(f"### {book['title']}")
+                    if inactive_warning:
+                        st.markdown(inactive_warning, unsafe_allow_html=True)
+                    st.caption(f"{book.get('author','Unknown')} · {total_read} / {total_pages} pages · {len(sessions)} sessions")
 
                     if sessions:
-                        with st.expander(f"🗂 {len(sessions)} past sessions"):
+                        with st.expander(f"🗂 {len(sessions)} past sessions", expanded=st.session_state.get(f"show_past_{book['id']}", False)):
                             for s in reversed(sessions):
                                 stars = '★' * s['session_rating'] + '☆' * (5 - s['session_rating'])
                                 st.markdown(f"""
@@ -704,7 +697,7 @@ elif page == "📖  Reading Log":
                                 </div>
                                 """, unsafe_allow_html=True)
 
-                    with st.expander(f"➕ Log new session — '{book['title']}'", expanded=False):
+                    with st.expander(f"➕ Log new session — '{book['title']}'", expanded=not st.session_state.get(f"show_past_{book['id']}", False)):
                         s_pages = st.number_input("Pages read today", min_value=1, step=1, key=f"pages_{book['id']}")
                         s_learned = st.text_area("What did you learn?", key=f"learned_{book['id']}", height=80)
                         s_rating = st.slider("How was the session?", 1, 5, 3, key=f"srating_{book['id']}")
@@ -724,6 +717,7 @@ elif page == "📖  Reading Log":
                                     st.success("🎉 You finished the book!")
                                 else:
                                     st.success(f"✅ Session saved! {total_pages - new_total} pages left.")
+                                st.session_state[f"show_past_{book['id']}"] = True
                                 st.rerun()
                             except Exception as ex:
                                 st.error(f"Error: {ex}")
