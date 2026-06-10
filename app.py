@@ -953,8 +953,6 @@ elif page == "🛍️  Purchase Tracker":
         st.session_state["purchase_view"] = "➕ Add Purchase"
 
     view = st.radio("Purchase View", ["🔴 Pending Review", "📋 All Purchases", "➕ Add Purchase"],
-                    label_visibility="collapsed",
-                    index=["🔴 Pending Review", "📋 All Purchases", "➕ Add Purchase"].index(st.session_state["purchase_view"]),
                     horizontal=True, label_visibility="collapsed")
     st.session_state["purchase_view"] = view
     st.markdown('<hr class="divider">', unsafe_allow_html=True)
