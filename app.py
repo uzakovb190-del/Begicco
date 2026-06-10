@@ -689,8 +689,22 @@ elif page == "📖  Reading Log":
                     </div>
                     """, unsafe_allow_html=True)
 
-                    # Log a session
-                    with st.expander(f"📖 Log a session for '{book['title']}'"):
+                    if sessions:
+                        with st.expander(f"🗂 {len(sessions)} past sessions"):
+                            for s in reversed(sessions):
+                                stars = '★' * s['session_rating'] + '☆' * (5 - s['session_rating'])
+                                st.markdown(f"""
+                                <div class="card" style="margin-bottom:0.4rem;">
+                                    <div style="display:flex;justify-content:space-between;">
+                                        <span style="font-family:'JetBrains Mono',monospace;font-size:0.8rem;color:#888;">{s['session_date']}</span>
+                                        <span class="badge badge-blue">+{s['pages_read']} pages</span>
+                                        <span class="badge badge-yellow">{stars}</span>
+                                    </div>
+                                    <div style="margin-top:0.4rem;color:#ccc;font-size:0.85rem;">{s.get('learned','—')}</div>
+                                </div>
+                                """, unsafe_allow_html=True)
+
+                    with st.expander(f"➕ Log new session — '{book['title']}'", expanded=False):
                         s_pages = st.number_input("Pages read today", min_value=1, step=1, key=f"pages_{book['id']}")
                         s_learned = st.text_area("What did you learn?", key=f"learned_{book['id']}", height=80)
                         s_rating = st.slider("How was the session?", 1, 5, 3, key=f"srating_{book['id']}")
@@ -704,16 +718,12 @@ elif page == "📖  Reading Log":
                                     "learned": s_learned.strip(),
                                     "session_rating": s_rating
                                 }).execute()
-
                                 new_total = total_read + s_pages
-
-                                # Auto-completion check
                                 if new_total >= total_pages:
-                                    st.success("🎉 You finished the book! Scroll down to complete it.")
                                     st.session_state[f"complete_{book['id']}"] = True
+                                    st.success("🎉 You finished the book!")
                                 else:
                                     st.success(f"✅ Session saved! {total_pages - new_total} pages left.")
-                                st.session_state[f"show_add_session_{book['id']}"] = True
                                 st.rerun()
                             except Exception as ex:
                                 st.error(f"Error: {ex}")
