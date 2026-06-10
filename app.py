@@ -952,7 +952,8 @@ elif page == "🛍️  Purchase Tracker":
     if "purchase_view" not in st.session_state:
         st.session_state["purchase_view"] = "➕ Add Purchase"
 
-    view = st.radio("", ["🔴 Pending Review", "📋 All Purchases", "➕ Add Purchase"],
+    view = st.radio("Purchase View", ["🔴 Pending Review", "📋 All Purchases", "➕ Add Purchase"],
+                    label_visibility="collapsed",
                     index=["🔴 Pending Review", "📋 All Purchases", "➕ Add Purchase"].index(st.session_state["purchase_view"]),
                     horizontal=True, label_visibility="collapsed")
     st.session_state["purchase_view"] = view
@@ -1130,7 +1131,7 @@ elif page == "🛍️  Purchase Tracker":
                 except Exception as ex:
                     st.error(f"Error: {ex}")
 
-        if editing_p_id and st.button("Cancel", key="cancel_edit_purchase"):
+        if editing_p_id and st.button("Cancel", key="cancel_purchase_form"):
             st.session_state["editing_purchase"] = None
             st.rerun()
 
