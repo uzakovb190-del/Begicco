@@ -926,8 +926,7 @@ elif page == "🚨  Life Event":
                 col_edit, col_del = st.columns([1, 1])
                 with col_edit:
                     col_edit, col_del = st.columns([1, 1])
-                with col_edit:
-                    if st.button("✏️ Edit", key=f"edit_event_{e['id']}"):
+                with col_edit:                 
                         st.session_state["editing_event"] = e
                         st.session_state["life_event_view"] = "➕ Log New Event"
                         st.rerun()
