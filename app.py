@@ -808,8 +808,99 @@ elif page == "📖  Reading Log":
 
 elif page == "🚨  Life Event":
     st.markdown('<div class="section-header">🚨 Life Event Diary</div>', unsafe_allow_html=True)
-    st.markdown('<div class="section-sub">coming in part 3</div>', unsafe_allow_html=True)
-    st.info("This section is being built. Check back after Part 3.")
+    st.markdown('<div class="section-sub">record moments that actually mattered</div>', unsafe_allow_html=True)
+
+    tab1, tab2 = st.tabs(["📋 Past Events", "➕ Log New Event"])
+
+    # ============================================================
+    # TAB 1 — PAST EVENTS
+    # ============================================================
+    with tab1:
+        # Filter by type
+        event_types = ["All", "movie", "accident", "realization", "personal event", "other"]
+        filter_type = st.selectbox("Filter by type", event_types, label_visibility="collapsed")
+
+        try:
+            query = supabase.table("life_events").select("*").order("event_date", desc=True)
+            if filter_type != "All":
+                query = query.eq("event_type", filter_type)
+            events = query.execute().data or []
+        except:
+            events = []
+
+        if not events:
+            st.info("No life events logged yet.")
+        else:
+            for e in events:
+                sig = e.get("significance_score", 1)
+                if sig >= 5:
+                    border_color = "#fbbf24"
+                elif sig >= 4:
+                    border_color = "#fb923c"
+                elif sig >= 3:
+                    border_color = "#facc15"
+                else:
+                    border_color = "#444"
+
+                type_colors = {
+                    "realization": "badge-green",
+                    "personal event": "badge-blue",
+                    "accident": "badge-red",
+                    "movie": "badge-grey",
+                    "other": "badge-grey"
+                }
+                type_badge = f'<span class="badge {type_colors.get(e["event_type"], "badge-grey")}">{e["event_type"]}</span>'
+
+                st.markdown(f"""
+                <div class="card" style="border-left: 3px solid {border_color}; margin-bottom:1rem;">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;">
+                        <span style="font-size:1rem;font-weight:800;color:#fff;">{e['event_title']}</span>
+                        <div style="display:flex;gap:0.5rem;align-items:center;">
+                            {type_badge}
+                            {significance_badge(sig)}
+                        </div>
+                    </div>
+                    <div style="color:#ccc;font-size:0.9rem;margin-bottom:0.5rem;">{e.get('event_description','')}</div>
+                    <div style="color:#888;font-size:0.85rem;font-style:italic;">💭 {e.get('emotional_impact','')}</div>
+                    <div style="margin-top:0.5rem;font-size:0.75rem;color:#555;font-family:'JetBrains Mono',monospace;">{e.get('event_date','')}</div>
+                </div>
+                """, unsafe_allow_html=True)
+
+    # ============================================================
+    # TAB 2 — LOG NEW EVENT
+    # ============================================================
+    with tab2:
+        st.markdown("#### What happened?")
+
+        e_title = st.text_input("Event Title", placeholder="e.g. Got accepted, Had an accident, Realized something...")
+        e_type  = st.selectbox("Event Type", ["personal event", "realization", "accident", "movie", "other"])
+        e_desc  = st.text_area("Description", height=100, placeholder="What exactly happened?")
+        e_impact = st.text_area("Emotional Impact", height=80, placeholder="How did it hit you? What did you feel?")
+
+        col1, col2 = st.columns(2)
+        with col1:
+            e_sig = st.slider("Significance (1–5)", 1, 5, 3)
+            st.markdown(significance_badge(e_sig), unsafe_allow_html=True)
+        with col2:
+            e_date = st.date_input("Date", value=date.today())
+
+        if st.button("💾 Save Event", type="primary"):
+            if not e_title.strip():
+                st.error("Please enter an event title.")
+            else:
+                try:
+                    supabase.table("life_events").insert({
+                        "event_title": e_title.strip(),
+                        "event_type": e_type,
+                        "event_description": e_desc.strip(),
+                        "emotional_impact": e_impact.strip(),
+                        "significance_score": e_sig,
+                        "event_date": str(e_date)
+                    }).execute()
+                    st.success("✅ Event saved to your archive.")
+                    st.rerun()
+                except Exception as ex:
+                    st.error(f"Error: {ex}")
 
 elif page == "🛍️  Purchase Tracker":
     st.markdown('<div class="section-header">🛍️ Purchase Tracker</div>', unsafe_allow_html=True)
