@@ -945,11 +945,149 @@ elif page == "🚨  Life Event":
             st.session_state["editing_event"] = None
             st.rerun()
                 
-
 elif page == "🛍️  Purchase Tracker":
     st.markdown('<div class="section-header">🛍️ Purchase Tracker</div>', unsafe_allow_html=True)
-    st.markdown('<div class="section-sub">coming in part 3</div>', unsafe_allow_html=True)
-    st.info("This section is being built. Check back after Part 3.")
+    st.markdown('<div class="section-sub">track what you buy · review what it was worth</div>', unsafe_allow_html=True)
+
+    if "purchase_view" not in st.session_state:
+        st.session_state["purchase_view"] = "➕ Add Purchase"
+
+    view = st.radio("", ["🔴 Pending Review", "📋 All Purchases", "➕ Add Purchase"],
+                    index=["🔴 Pending Review", "📋 All Purchases", "➕ Add Purchase"].index(st.session_state["purchase_view"]),
+                    horizontal=True, label_visibility="collapsed")
+    st.session_state["purchase_view"] = view
+    st.markdown('<hr class="divider">', unsafe_allow_html=True)
+
+    # ============================================================
+    # PENDING REVIEW
+    # ============================================================
+    if view == "🔴 Pending Review":
+        try:
+            all_purchases = supabase.table("purchases").select("*").eq("phase2_completed", False).order("purchase_date", desc=True).execute().data or []
+            pending = [p for p in all_purchases if p.get("review_due_date") and p["review_due_date"] <= str(date.today())]
+        except:
+            pending = []
+
+        if not pending:
+            st.success("✅ No purchases pending review.")
+        else:
+            st.markdown(f'<div class="section-sub">🔴 {len(pending)} purchase(s) waiting for your honest review</div>', unsafe_allow_html=True)
+            for p in pending:
+                days_overdue = (date.today() - date.fromisoformat(p["review_due_date"])).days
+                st.markdown(f"""
+                <div class="card" style="border-left: 3px solid #f87171;">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.4rem;">
+                        <span style="font-weight:800;color:#fff;font-size:1rem;">{p['item_name']}</span>
+                        <div style="display:flex;gap:0.5rem;">
+                            <span class="badge badge-red">🔴 {days_overdue}d overdue</span>
+                            <span class="badge badge-grey">{p.get('category','')}</span>
+                        </div>
+                    </div>
+                    <div style="font-size:0.85rem;color:#888;font-family:'JetBrains Mono',monospace;">
+                        {p.get('amount',0):,.0f} UZS · bought {p.get('purchase_date','')} · expected: {p.get('expected_value','')}
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+
+                with st.expander(f"📝 Review '{p['item_name']}'"):
+                    r_usage     = st.selectbox("How often did you use it?", ["never", "once", "few times", "regularly", "daily"], key=f"usage_{p['id']}")
+                    r_actual    = st.text_input("Actual use case", key=f"actual_{p['id']}", placeholder="What did you actually use it for?")
+                    r_sat       = st.slider("Satisfaction (1–5)", 1, 5, 3, key=f"sat_{p['id']}")
+                    r_regret    = st.slider("Regret level (1–5)", 1, 5, 2, key=f"regret_{p['id']}")
+                    r_worth     = st.radio("Worth it?", ["Yes", "No"], key=f"worth_{p['id']}", horizontal=True)
+                    r_reflection = st.text_area("Reflection", key=f"reflection_{p['id']}", height=80, placeholder="What did you learn from this purchase?")
+
+                    if st.button("✅ Submit Review", key=f"review_{p['id']}", type="primary"):
+                        try:
+                            supabase.table("purchases").update({
+                                "usage_frequency": r_usage,
+                                "actual_use_case": r_actual.strip(),
+                                "satisfaction_level": r_sat,
+                                "regret_level": r_regret,
+                                "worth_it": r_worth == "Yes",
+                                "review_reflection": r_reflection.strip(),
+                                "phase2_completed": True
+                            }).eq("id", p["id"]).execute()
+                            st.success("✅ Review saved.")
+                            st.rerun()
+                        except Exception as ex:
+                            st.error(f"Error: {ex}")
+
+    # ============================================================
+    # ALL PURCHASES
+    # ============================================================
+    elif view == "📋 All Purchases":
+        try:
+            all_purchases = supabase.table("purchases").select("*").order("purchase_date", desc=True).execute().data or []
+        except:
+            all_purchases = []
+
+        if not all_purchases:
+            st.info("No purchases logged yet.")
+        else:
+            for p in all_purchases:
+                if not p.get("phase2_completed"):
+                    border = "#444"
+                    status_badge = '<span class="badge badge-grey">⏳ Pending Review</span>'
+                elif p.get("worth_it"):
+                    border = "#4ade80"
+                    status_badge = '<span class="badge badge-green">✅ Worth It</span>'
+                else:
+                    border = "#f87171"
+                    status_badge = '<span class="badge badge-red">❌ Not Worth It</span>'
+
+                st.markdown(f"""
+                <div class="card" style="border-left: 3px solid {border};">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.4rem;">
+                        <span style="font-weight:800;color:#fff;">{p['item_name']}</span>
+                        <div style="display:flex;gap:0.5rem;">
+                            {status_badge}
+                            <span class="badge badge-grey">{p.get('category','')}</span>
+                        </div>
+                    </div>
+                    <div style="font-size:0.85rem;color:#888;font-family:'JetBrains Mono',monospace;">
+                        {p.get('amount',0):,.0f} UZS · {p.get('purchase_date','')} · {p.get('emotional_state_post_purchase','')}
+                    </div>
+                    {f'<div style="margin-top:0.4rem;font-size:0.8rem;color:#666;">💭 {p["review_reflection"]}</div>' if p.get("review_reflection") else ''}
+                </div>
+                """, unsafe_allow_html=True)
+
+    # ============================================================
+    # ADD PURCHASE
+    # ============================================================
+    else:
+        st.markdown("#### What did you buy?")
+
+        p_name     = st.text_input("Item Name", placeholder="e.g. AirPods, lunch, new jacket...")
+        p_category = st.selectbox("Category", ["food", "clothing", "tech", "entertainment", "transport", "other"])
+        p_amount   = st.number_input("Amount (UZS)", min_value=0.0, step=1000.0)
+        p_reason   = st.text_input("Reason for buying", placeholder="Why did you buy this?")
+        p_emotion  = st.selectbox("Emotional state at purchase", ["planned", "impulse", "influenced", "necessity"])
+        p_expected = st.text_input("Expected value", placeholder="What do you expect to get from this?")
+        p_date     = st.date_input("Purchase Date", value=date.today())
+
+        if st.button("💾 Log Purchase", type="primary"):
+            if not p_name.strip():
+                st.error("Please enter an item name.")
+            else:
+                from datetime import timedelta
+                try:
+                    supabase.table("purchases").insert({
+                        "item_name": p_name.strip(),
+                        "category": p_category,
+                        "amount": p_amount,
+                        "reason_for_purchase": p_reason.strip(),
+                        "emotional_state_post_purchase": p_emotion,
+                        "expected_value": p_expected.strip(),
+                        "purchase_date": str(p_date),
+                        "review_due_date": str(p_date + timedelta(days=14)),
+                        "phase2_completed": False
+                    }).execute()
+                    st.success(f"✅ Purchase logged. Review reminder set for {p_date + timedelta(days=14)}.")
+                    st.session_state["purchase_view"] = "📋 All Purchases"
+                    st.rerun()
+                except Exception as ex:
+                    st.error(f"Error: {ex}")
 
 elif page == "💫  Wish List":
     st.markdown('<div class="section-header">💫 Wish List</div>', unsafe_allow_html=True)
