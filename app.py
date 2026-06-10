@@ -712,7 +712,8 @@ elif page == "📖  Reading Log":
                                     st.success("🎉 You finished the book! Scroll down to complete it.")
                                     st.session_state[f"complete_{book['id']}"] = True
                                 else:
-                                    st.success(f"Session saved! {total_pages - new_total} pages left.")
+                                    st.success(f"✅ Session saved! {total_pages - new_total} pages left.")
+                                st.session_state[f"show_add_session_{book['id']}"] = True
                                 st.rerun()
                             except Exception as ex:
                                 st.error(f"Error: {ex}")
