@@ -1113,6 +1113,7 @@ elif page == "🛍️  Purchase Tracker":
                         "item_name": p_name.strip(),
                         "category": p_category,
                         "amount": p_amount,
+                        "currency": p_currency,
                         "reason_for_purchase": p_reason.strip(),
                         "emotional_state_post_purchase": p_emotion,
                         "expected_value": p_expected.strip(),
