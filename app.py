@@ -1079,6 +1079,7 @@ elif page == "🛍️  Purchase Tracker":
     # ============================================================
     else:
         editing_p = st.session_state.get("editing_purchase", None)
+        editing_p_id = editing_p["id"] if editing_p else None
         st.markdown(f"#### {'✏️ Editing Purchase' if editing_p else 'What did you buy?'}")
 
         with st.form("purchase_form"):
@@ -1116,8 +1117,8 @@ elif page == "🛍️  Purchase Tracker":
                         "purchase_date": str(p_date),
                         "review_due_date": str(p_date + timedelta(days=14)),
                     }
-                    if editing_p:
-                        supabase.table("purchases").update(record).eq("id", editing_p["id"]).execute()
+                    if editing_p_id:
+                        supabase.table("purchases").update(record).eq("id", editing_p_id).execute()
                         st.success("✅ Purchase updated.")
                         st.session_state["editing_purchase"] = None
                     else:
@@ -1129,7 +1130,7 @@ elif page == "🛍️  Purchase Tracker":
                 except Exception as ex:
                     st.error(f"Error: {ex}")
 
-        if editing_p and st.button("Cancel"):
+        if editing_p_id and st.button("Cancel", key="cancel_edit_purchase"):
             st.session_state["editing_purchase"] = None
             st.rerun()
 
