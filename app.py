@@ -1133,7 +1133,7 @@ elif page == "🛍️  Purchase Tracker":
             st.session_state["editing_purchase"] = None
             st.rerun()
 
-        if editing_p and st.button("Cancel"):
+        if editing_p and st.button("Cancel", key="cancel_edit_purchase"):
             st.session_state["editing_purchase"] = None
             st.rerun()
             if not p_name.strip():
