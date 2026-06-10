@@ -984,7 +984,7 @@ elif page == "🛍️  Purchase Tracker":
                         </div>
                     </div>
                     <div style="font-size:0.85rem;color:#888;font-family:'JetBrains Mono',monospace;">
-                        {p.get('amount',0):,.0f} UZS · bought {p.get('purchase_date','')} · expected: {p.get('expected_value','')}
+                        {p.get('amount',0):,.0f} {p.get('currency','UZS')} · bought {p.get('purchase_date','')} · expected: {p.get('expected_value','')}
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
