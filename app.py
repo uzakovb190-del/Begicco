@@ -810,6 +810,7 @@ elif page == "🚨  Life Event":
     st.markdown('<div class="section-header">🚨 Life Event Diary</div>', unsafe_allow_html=True)
     st.markdown('<div class="section-sub">record moments that actually mattered</div>', unsafe_allow_html=True)
 
+    default_tab = st.session_state.get("life_event_tab", 1)
     tab1, tab2 = st.tabs(["📋 Past Events", "➕ Log New Event"])
 
     # ============================================================
@@ -898,6 +899,7 @@ elif page == "🚨  Life Event":
                         "event_date": str(e_date)
                     }).execute()
                     st.success("✅ Event saved to your archive.")
+                    st.session_state["life_event_tab"] = 0
                     st.rerun()
                 except Exception as ex:
                     st.error(f"Error: {ex}")
