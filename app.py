@@ -613,8 +613,193 @@ elif page == "📝  Daily Log":
 
 elif page == "📖  Reading Log":
     st.markdown('<div class="section-header">📖 Reading Log</div>', unsafe_allow_html=True)
-    st.markdown('<div class="section-sub">coming in part 3</div>', unsafe_allow_html=True)
-    st.info("This section is being built. Check back after Part 3.")
+    st.markdown('<div class="section-sub">track every book · session by session</div>', unsafe_allow_html=True)
+
+    # ---- Fetch all books ----
+    try:
+        all_books = supabase.table("books").select("*").order("created_at", desc=False).execute().data or []
+        reading_books   = [b for b in all_books if b["status"] == "reading"]
+        finished_books  = [b for b in all_books if b["status"] == "finished"]
+    except:
+        all_books = reading_books = finished_books = []
+
+    # ---- Tabs ----
+    tab1, tab2, tab3 = st.tabs(["📚 Currently Reading", "✅ Finished Shelf", "➕ Add New Book"])
+
+    # ============================================================
+    # TAB 1 — CURRENTLY READING
+    # ============================================================
+    with tab1:
+        if not reading_books:
+            st.info("No books in progress. Add one in the 'Add New Book' tab.")
+        else:
+            for book in reading_books:
+                # Fetch sessions for this book
+                try:
+                    sessions = supabase.table("reading_sessions").select("*").eq("book_id", book["id"]).order("session_date", desc=False).execute().data or []
+                except:
+                    sessions = []
+
+                total_read = sum(s["pages_read"] for s in sessions)
+                total_pages = book["total_pages"]
+                progress = min(int((total_read / total_pages) * 100), 100) if total_pages > 0 else 0
+
+                # Inactivity check
+                inactive_warning = ""
+                if sessions:
+                    from datetime import datetime, timedelta
+                    last_session_date = datetime.strptime(sessions[-1]["session_date"], "%Y-%m-%d").date()
+                    days_since = (date.today() - last_session_date).days
+                    if days_since >= 7:
+                        inactive_warning = f'<span class="badge badge-red">🔴 {days_since} days inactive</span>'
+
+                # Progress circle via SVG
+                radius = 36
+                circumference = 2 * 3.14159 * radius
+                stroke_offset = circumference * (1 - progress / 100)
+                circle_color = "#4ade80" if progress >= 75 else "#facc15" if progress >= 40 else "#60a5fa"
+
+                col1, col2 = st.columns([1, 3])
+                with col1:
+                    st.markdown(f"""
+                    <div style="display:flex;justify-content:center;align-items:center;padding:1rem 0;">
+                        <svg width="100" height="100" viewBox="0 0 100 100">
+                            <circle cx="50" cy="50" r="{radius}" fill="none" stroke="#2a2a2a" stroke-width="8"/>
+                            <circle cx="50" cy="50" r="{radius}" fill="none" stroke="{circle_color}" stroke-width="8"
+                                stroke-dasharray="{circumference:.1f}"
+                                stroke-dashoffset="{stroke_offset:.1f}"
+                                stroke-linecap="round"
+                                transform="rotate(-90 50 50)"/>
+                            <text x="50" y="54" text-anchor="middle" fill="#fff"
+                                font-family="JetBrains Mono" font-size="14" font-weight="700">{progress}%</text>
+                        </svg>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+                with col2:
+                    st.markdown(f"""
+                    <div class="card" style="margin-bottom:0.5rem;">
+                        <div style="display:flex;align-items:center;gap:0.8rem;margin-bottom:0.4rem;">
+                            <span style="font-size:1.1rem;font-weight:800;color:#fff;">{book['title']}</span>
+                            {inactive_warning}
+                        </div>
+                        <div style="font-size:0.8rem;color:#666;font-family:'JetBrains Mono',monospace;">
+                            {book.get('author','Unknown')} &nbsp;·&nbsp; {total_read} / {total_pages} pages &nbsp;·&nbsp; {len(sessions)} sessions
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+                    # Log a session
+                    with st.expander(f"📖 Log a session for '{book['title']}'"):
+                        s_pages = st.number_input("Pages read today", min_value=1, step=1, key=f"pages_{book['id']}")
+                        s_learned = st.text_area("What did you learn?", key=f"learned_{book['id']}", height=80)
+                        s_rating = st.slider("How was the session?", 1, 5, 3, key=f"srating_{book['id']}")
+
+                        if st.button("Save Session", key=f"save_session_{book['id']}"):
+                            try:
+                                supabase.table("reading_sessions").insert({
+                                    "book_id": book["id"],
+                                    "session_date": str(date.today()),
+                                    "pages_read": s_pages,
+                                    "learned": s_learned.strip(),
+                                    "session_rating": s_rating
+                                }).execute()
+
+                                new_total = total_read + s_pages
+
+                                # Auto-completion check
+                                if new_total >= total_pages:
+                                    st.success("🎉 You finished the book! Scroll down to complete it.")
+                                    st.session_state[f"complete_{book['id']}"] = True
+                                else:
+                                    st.success(f"Session saved! {total_pages - new_total} pages left.")
+                                st.rerun()
+                            except Exception as ex:
+                                st.error(f"Error: {ex}")
+
+                    # Completion form (auto-triggered)
+                    if st.session_state.get(f"complete_{book['id']}", False):
+                        st.markdown("---")
+                        st.markdown("### 🏁 Book Complete — Final Review")
+                        f_rating  = st.slider("Overall rating (1–10)", 1, 10, 8, key=f"frating_{book['id']}")
+                        f_review  = st.text_area("How was the book overall?", key=f"freview_{book['id']}", height=80)
+                        f_rec     = st.radio("Would you recommend it?", ["Yes", "No"], key=f"frec_{book['id']}")
+                        f_takeaway = st.text_input("Key takeaway", key=f"ftakeaway_{book['id']}")
+
+                        if st.button("✅ Mark as Finished", key=f"finish_{book['id']}"):
+                            try:
+                                supabase.table("books").update({
+                                    "status": "finished",
+                                    "overall_rating": f_rating,
+                                    "review": f_review.strip(),
+                                    "recommend": f_rec == "Yes",
+                                    "key_takeaway": f_takeaway.strip(),
+                                    "date_finished": str(date.today())
+                                }).eq("id", book["id"]).execute()
+                                st.session_state[f"complete_{book['id']}"] = False
+                                st.success("Book moved to finished shelf!")
+                                st.rerun()
+                            except Exception as ex:
+                                st.error(f"Error: {ex}")
+
+                st.markdown('<hr class="divider">', unsafe_allow_html=True)
+
+    # ============================================================
+    # TAB 2 — FINISHED SHELF
+    # ============================================================
+    with tab2:
+        if not finished_books:
+            st.info("No finished books yet. Keep reading!")
+        else:
+            for book in finished_books:
+                rec_badge = '<span class="badge badge-green">👍 Recommended</span>' if book.get("recommend") else '<span class="badge badge-grey">👎 Not Recommended</span>'
+                rating = book.get("overall_rating", "—")
+                rating_color = "#4ade80" if (rating != "—" and rating >= 8) else "#facc15" if (rating != "—" and rating >= 5) else "#f87171"
+
+                st.markdown(f"""
+                <div class="card">
+                    <div style="display:flex;justify-content:space-between;align-items:center;">
+                        <div>
+                            <span style="font-size:1rem;font-weight:800;color:#fff;">{book['title']}</span>
+                            <span style="font-size:0.8rem;color:#666;margin-left:0.8rem;font-family:'JetBrains Mono',monospace;">{book.get('author','')}</span>
+                        </div>
+                        <div style="display:flex;gap:0.5rem;align-items:center;">
+                            <span style="font-family:'JetBrains Mono',monospace;font-size:1.2rem;font-weight:800;color:{rating_color};">{rating}/10</span>
+                            {rec_badge}
+                        </div>
+                    </div>
+                    <div style="margin-top:0.6rem;color:#aaa;font-size:0.85rem;">{book.get('review','')}</div>
+                    <div style="margin-top:0.4rem;font-size:0.8rem;color:#555;font-family:'JetBrains Mono',monospace;">
+                        💡 {book.get('key_takeaway','—')} &nbsp;·&nbsp; finished {book.get('date_finished','—')}
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+
+    # ============================================================
+    # TAB 3 — ADD NEW BOOK
+    # ============================================================
+    with tab3:
+        st.markdown("#### Add a New Book")
+        b_title  = st.text_input("Book Title", placeholder="e.g. Limitless")
+        b_author = st.text_input("Author", placeholder="e.g. Jim Kwik")
+        b_pages  = st.number_input("Total Pages", min_value=1, step=1, value=300)
+
+        if st.button("➕ Add Book", type="primary"):
+            if not b_title.strip():
+                st.error("Please enter a title.")
+            else:
+                try:
+                    supabase.table("books").insert({
+                        "title": b_title.strip(),
+                        "author": b_author.strip(),
+                        "total_pages": b_pages,
+                        "status": "reading",
+                        "date_started": str(date.today())
+                    }).execute()
+                    st.success(f"'{b_title}' added to your reading list!")
+                    st.rerun()
+                except Exception as ex:
+                    st.error(f"Error: {ex}")
 
 elif page == "🚨  Life Event":
     st.markdown('<div class="section-header">🚨 Life Event Diary</div>', unsafe_allow_html=True)
