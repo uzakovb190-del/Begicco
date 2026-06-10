@@ -871,10 +871,28 @@ elif page == "🚨  Life Event":
                     <div style="margin-top:0.5rem;font-size:0.75rem;color:#555;font-family:'JetBrains Mono',monospace;">{e.get('event_date','')}</div>
                 </div>
                 """, unsafe_allow_html=True)
-                if st.button("✏️ Edit", key=f"edit_event_{e['id']}"):
-                    st.session_state["editing_event"] = e
-                    st.session_state["life_event_view"] = "➕ Log New Event"
-                    st.rerun()
+                col_edit, col_del = st.columns([1, 1])
+                with col_edit:
+                    if st.button("✏️ Edit", key=f"edit_event_{e['id']}"):
+                        st.session_state["editing_event"] = e
+                        st.session_state["life_event_view"] = "➕ Log New Event"
+                        st.rerun()
+                with col_del:
+                    if st.button("🗑️ Delete", key=f"del_event_{e['id']}"):
+                        st.session_state[f"confirm_del_{e['id']}"] = True
+                        st.rerun()
+                if st.session_state.get(f"confirm_del_{e['id']}", False):
+                    st.warning(f"Delete **{e['event_title']}**? This cannot be undone.")
+                    c1, c2 = st.columns(2)
+                    with c1:
+                        if st.button("Yes, delete", key=f"yes_del_{e['id']}"):
+                            supabase.table("life_events").delete().eq("id", e["id"]).execute()
+                            st.session_state[f"confirm_del_{e['id']}"] = False
+                            st.rerun()
+                    with c2:
+                        if st.button("Cancel", key=f"cancel_del_{e['id']}"):
+                            st.session_state[f"confirm_del_{e['id']}"] = False
+                            st.rerun()
 
     # ============================================================
     # LOG NEW EVENT
