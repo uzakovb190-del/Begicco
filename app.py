@@ -810,14 +810,19 @@ elif page == "🚨  Life Event":
     st.markdown('<div class="section-header">🚨 Life Event Diary</div>', unsafe_allow_html=True)
     st.markdown('<div class="section-sub">record moments that actually mattered</div>', unsafe_allow_html=True)
 
-    default_tab = st.session_state.get("life_event_tab", 1)
-    tab1, tab2 = st.tabs(["📋 Past Events", "➕ Log New Event"])
+    if "life_event_view" not in st.session_state:
+        st.session_state["life_event_view"] = "➕ Log New Event"
+
+    view = st.radio("", ["📋 Past Events", "➕ Log New Event"],
+                    index=0 if st.session_state["life_event_view"] == "📋 Past Events" else 1,
+                    horizontal=True, label_visibility="collapsed")
+    st.session_state["life_event_view"] = view
+    st.markdown('<hr class="divider">', unsafe_allow_html=True)
 
     # ============================================================
-    # TAB 1 — PAST EVENTS
+    # PAST EVENTS
     # ============================================================
-    with tab1:
-        # Filter by type
+    if view == "📋 Past Events":
         event_types = ["All", "movie", "accident", "realization", "personal event", "other"]
         filter_type = st.selectbox("Filter by type", event_types, label_visibility="collapsed")
 
@@ -868,14 +873,14 @@ elif page == "🚨  Life Event":
                 """, unsafe_allow_html=True)
 
     # ============================================================
-    # TAB 2 — LOG NEW EVENT
+    # LOG NEW EVENT
     # ============================================================
-    with tab2:
+    else:
         st.markdown("#### What happened?")
 
-        e_title = st.text_input("Event Title", placeholder="e.g. Got accepted, Had an accident, Realized something...")
-        e_type  = st.selectbox("Event Type", ["personal event", "realization", "accident", "movie", "other"])
-        e_desc  = st.text_area("Description", height=100, placeholder="What exactly happened?")
+        e_title  = st.text_input("Event Title", placeholder="e.g. Got accepted, Had an accident, Realized something...")
+        e_type   = st.selectbox("Event Type", ["personal event", "realization", "accident", "movie", "other"])
+        e_desc   = st.text_area("Description", height=100, placeholder="What exactly happened?")
         e_impact = st.text_area("Emotional Impact", height=80, placeholder="How did it hit you? What did you feel?")
 
         col1, col2 = st.columns(2)
@@ -898,8 +903,8 @@ elif page == "🚨  Life Event":
                         "significance_score": e_sig,
                         "event_date": str(e_date)
                     }).execute()
-                    st.success("✅ Event saved to your archive.")
-                    st.session_state["life_event_tab"] = 0
+                    st.success("✅ Event saved.")
+                    st.session_state["life_event_view"] = "📋 Past Events"
                     st.rerun()
                 except Exception as ex:
                     st.error(f"Error: {ex}")
