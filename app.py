@@ -923,7 +923,7 @@ elif page == "🚨  Life Event":
                 except Exception as ex:
                     st.error(f"Error: {ex}")
 
-             col_edit, col_del = st.columns([1, 1])
+                col_edit, col_del = st.columns([1, 1])
                 with col_edit:
                     if st.button("✏️ Edit", key=f"edit_event_{e['id']}"):
                         st.session_state["editing_event"] = e
