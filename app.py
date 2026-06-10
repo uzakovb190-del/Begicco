@@ -871,43 +871,61 @@ elif page == "🚨  Life Event":
                     <div style="margin-top:0.5rem;font-size:0.75rem;color:#555;font-family:'JetBrains Mono',monospace;">{e.get('event_date','')}</div>
                 </div>
                 """, unsafe_allow_html=True)
+                if st.button("✏️ Edit", key=f"edit_event_{e['id']}"):
+                    st.session_state["editing_event"] = e
+                    st.session_state["life_event_view"] = "➕ Log New Event"
+                    st.rerun()
 
     # ============================================================
     # LOG NEW EVENT
     # ============================================================
     else:
-        st.markdown("#### What happened?")
+        editing = st.session_state.get("editing_event", None)
+        st.markdown(f"#### {'✏️ Editing Event' if editing else 'What happened?'}")
 
-        e_title  = st.text_input("Event Title", placeholder="e.g. Got accepted, Had an accident, Realized something...")
-        e_type   = st.selectbox("Event Type", ["personal event", "realization", "accident", "movie", "other"])
-        e_desc   = st.text_area("Description", height=100, placeholder="What exactly happened?")
-        e_impact = st.text_area("Emotional Impact", height=80, placeholder="How did it hit you? What did you feel?")
+        e_types_list = ["personal event", "realization", "accident", "movie", "other"]
+        e_title  = st.text_input("Event Title", value=editing["event_title"] if editing else "", placeholder="e.g. Got accepted...")
+        e_type   = st.selectbox("Event Type", e_types_list, index=e_types_list.index(editing["event_type"]) if editing else 0)
+        e_desc   = st.text_area("Description", value=editing.get("event_description","") if editing else "", height=100)
+        e_impact = st.text_area("Emotional Impact", value=editing.get("emotional_impact","") if editing else "", height=80)
 
         col1, col2 = st.columns(2)
         with col1:
-            e_sig = st.slider("Significance (1–5)", 1, 5, 3)
+            e_sig = st.slider("Significance (1–5)", 1, 5, editing["significance_score"] if editing else 3)
             st.markdown(significance_badge(e_sig), unsafe_allow_html=True)
         with col2:
-            e_date = st.date_input("Date", value=date.today())
+            from datetime import datetime
+            default_date = datetime.strptime(editing["event_date"], "%Y-%m-%d").date() if editing else date.today()
+            e_date = st.date_input("Date", value=default_date)
 
-        if st.button("💾 Save Event", type="primary"):
+        if st.button("💾 Update Event" if editing else "💾 Save Event", type="primary"):
             if not e_title.strip():
                 st.error("Please enter an event title.")
             else:
                 try:
-                    supabase.table("life_events").insert({
+                    record = {
                         "event_title": e_title.strip(),
                         "event_type": e_type,
                         "event_description": e_desc.strip(),
                         "emotional_impact": e_impact.strip(),
                         "significance_score": e_sig,
                         "event_date": str(e_date)
-                    }).execute()
-                    st.success("✅ Event saved.")
+                    }
+                    if editing:
+                        supabase.table("life_events").update(record).eq("id", editing["id"]).execute()
+                        st.success("✅ Event updated.")
+                        st.session_state["editing_event"] = None
+                    else:
+                        supabase.table("life_events").insert(record).execute()
+                        st.success("✅ Event saved.")
                     st.session_state["life_event_view"] = "📋 Past Events"
                     st.rerun()
                 except Exception as ex:
                     st.error(f"Error: {ex}")
+
+        if editing and st.button("Cancel"):
+            st.session_state["editing_event"] = None
+            st.rerun()
 
 elif page == "🛍️  Purchase Tracker":
     st.markdown('<div class="section-header">🛍️ Purchase Tracker</div>', unsafe_allow_html=True)
