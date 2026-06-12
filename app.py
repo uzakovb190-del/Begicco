@@ -152,6 +152,21 @@ st.markdown("""
     .nav-item:hover { background: #1e1e1e; color: #fff; }
     .nav-item.active { background: #1a3a2a; color: #4ade80; font-weight: 700; }
 
+    /* Ensure sidebar toggle is always visible and accessible */
+    button[data-testid="stSidebarCollapseButton"],
+    button[kind="header"] {
+        position: fixed !important;
+        top: 0.5rem !important;
+        left: 0.5rem !important;
+        z-index: 999999 !important;
+        background-color: #1a1a1a !important;
+        border: 1px solid #4ade80 !important;
+        border-radius: 8px !important;
+    }
+
+    /* Metric cards */
+    .metric-row {
+
     /* Metric cards */
     .metric-row {
         display: flex;
