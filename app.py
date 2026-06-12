@@ -1249,7 +1249,7 @@ elif page == "💫  Wish List":
 
     view = st.radio("Wish View", ["💫 Passive Wishes", "➕ Add Wish"],
                     index=["💫 Passive Wishes", "➕ Add Wish"].index(st.session_state["wish_view"]),
-                    horizontal=True, label_visibility="collapsed")
+                    horizontal=True, label_visibility="collapsed", key="wish_view_radio")
     st.session_state["wish_view"] = view
     st.markdown('<hr class="divider">', unsafe_allow_html=True)
 
