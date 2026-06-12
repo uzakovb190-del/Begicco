@@ -1240,8 +1240,100 @@ elif page == "🎯  Goals":
 
 elif page == "🎯  Goals":
     st.markdown('<div class="section-header">🎯 Goals</div>', unsafe_allow_html=True)
-    st.markdown('<div class="section-sub">coming in part 4</div>', unsafe_allow_html=True)
-    st.info("This section is being built. Check back after Part 4.")
+    st.markdown('<div class="section-sub">activated wishes · tracked session by session</div>', unsafe_allow_html=True)
+
+    try:
+        goals = supabase.table("goals").select("*").order("created_at", desc=False).execute().data or []
+    except:
+        goals = []
+
+    active_goals    = [g for g in goals if g["status"] == "active"]
+    paused_goals    = [g for g in goals if g["status"] == "paused"]
+    completed_goals = [g for g in goals if g["status"] == "completed"]
+
+    if not goals:
+        st.info("No goals yet. Activate a wish from the Wish List to get started.")
+    else:
+        for g in active_goals + paused_goals + completed_goals:
+            try:
+                sessions = supabase.table("goal_sessions").select("*").eq("goal_id", g["id"]).order("session_date", desc=False).execute().data or []
+            except:
+                sessions = []
+
+            total_hours = sum(s.get("duration_hours", 0) or 0 for s in sessions)
+            avg_enjoyment = (sum(s.get("enjoyment_score", 0) or 0 for s in sessions) / len(sessions)) if sessions else 0
+
+            st.markdown(f"""
+            <div class="card">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;">
+                    <span style="font-size:1.1rem;font-weight:800;color:#fff;">{g['goal_title']}</span>
+                    {goal_status_badge(g['status'])}
+                </div>
+                <div style="font-size:0.85rem;color:#888;font-family:'JetBrains Mono',monospace;">
+                    {len(sessions)} sessions · {total_hours:.1f} hrs total · avg enjoyment {avg_enjoyment:.1f}/5
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+            # Past sessions
+            if sessions:
+                with st.expander(f"🗂 {len(sessions)} past sessions"):
+                    for s in reversed(sessions):
+                        stars = '★' * (s.get('enjoyment_score') or 0) + '☆' * (5 - (s.get('enjoyment_score') or 0))
+                        st.markdown(f"""
+                        <div class="card" style="margin-bottom:0.4rem;">
+                            <div style="display:flex;justify-content:space-between;">
+                                <span style="font-family:'JetBrains Mono',monospace;font-size:0.8rem;color:#888;">{s['session_date']}</span>
+                                <span class="badge badge-blue">{s.get('duration_hours',0)} hrs</span>
+                                <span class="badge badge-yellow">{stars}</span>
+                            </div>
+                            <div style="margin-top:0.4rem;color:#ccc;font-size:0.85rem;"><b>{s.get('activity_description','')}</b></div>
+                            <div style="margin-top:0.2rem;color:#888;font-size:0.85rem;">{s.get('learning_summary','')}</div>
+                        </div>
+                        """, unsafe_allow_html=True)
+
+            # Log new session (only if active)
+            if g["status"] == "active":
+                with st.expander(f"➕ Log a session for '{g['goal_title']}'"):
+                    s_date     = st.date_input("Session Date", value=date.today(), key=f"sdate_{g['id']}")
+                    s_duration = st.number_input("Duration (hours)", min_value=0.0, step=0.5, value=1.0, key=f"sdur_{g['id']}")
+                    s_activity = st.text_input("What did you do?", key=f"sact_{g['id']}", placeholder="Describe the activity...")
+                    s_learning = st.text_area("What did you learn?", key=f"slearn_{g['id']}", height=80)
+                    s_enjoy    = st.slider("Enjoyment (1–5)", 1, 5, 3, key=f"senjoy_{g['id']}")
+
+                    if st.button("💾 Save Session", key=f"save_goal_session_{g['id']}", type="primary"):
+                        try:
+                            supabase.table("goal_sessions").insert({
+                                "goal_id": g["id"],
+                                "session_date": str(s_date),
+                                "duration_hours": s_duration,
+                                "activity_description": s_activity.strip(),
+                                "learning_summary": s_learning.strip(),
+                                "enjoyment_score": s_enjoy
+                            }).execute()
+                            st.success("✅ Session logged.")
+                            st.rerun()
+                        except Exception as ex:
+                            st.error(f"Error: {ex}")
+
+            # Status controls
+            if g["status"] == "active":
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.button("⏸️ Pause Goal", key=f"pause_{g['id']}"):
+                        supabase.table("goals").update({"status": "paused"}).eq("id", g["id"]).execute()
+                        st.rerun()
+                with col2:
+                    if st.button("🏁 End Goal → Log Outcome", key=f"end_{g['id']}", type="primary"):
+                        st.session_state["outcome_goal"] = dict(g)
+                        st.session_state["current_page_override"] = "🏆  Outcomes"
+                        st.rerun()
+            elif g["status"] == "paused":
+                if st.button("▶️ Resume Goal", key=f"resume_{g['id']}"):
+                    supabase.table("goals").update({"status": "active"}).eq("id", g["id"]).execute()
+                    st.rerun()
+
+            st.markdown('<hr class="divider">', unsafe_allow_html=True)
 
 elif page == "🏆  Outcomes":
     st.markdown('<div class="section-header">🏆 Outcomes</div>', unsafe_allow_html=True)
