@@ -268,6 +268,18 @@ with top_col2:
 if st.session_state.get("current_page_override"):
     page = st.session_state["current_page_override"]
     st.session_state["current_page_override"] = None
+    sidebar_page = st.radio(
+        "Navigation",
+        options=nav_options,
+        index=nav_options.index(page),
+        label_visibility="collapsed",
+        key=f"sidebar_nav_{st.session_state['nav_override_counter']}"
+    )
+
+    if sidebar_page != page:
+        page = sidebar_page
+        st.session_state["nav_override_counter"] = st.session_state.get("nav_override_counter", 0) + 1
+        st.rerun()
 
 st.markdown('<hr style="border-color:#2a2a2a;margin:0.5rem 0 1.5rem 0;">', unsafe_allow_html=True)
 
