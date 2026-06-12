@@ -1249,11 +1249,14 @@ elif page == "💫  Wish List":
         st.session_state["wish_view"] = "💫 Passive Wishes"
     if "editing_wish" not in st.session_state:
         st.session_state["editing_wish"] = None
+    if "wish_radio_counter" not in st.session_state:
+        st.session_state["wish_radio_counter"] = 0
 
     options = ["💫 Passive Wishes", "➕ Add Wish"]
     current_index = options.index(st.session_state["wish_view"])
     view = st.radio("Wish View", options, index=current_index,
-                    horizontal=True, label_visibility="collapsed", key=f"wish_radio_{current_index}")
+                    horizontal=True, label_visibility="collapsed",
+                    key=f"wish_radio_{st.session_state['wish_radio_counter']}")
     st.markdown('<hr class="divider">', unsafe_allow_html=True)
 
     # ============================================================
@@ -1295,6 +1298,7 @@ elif page == "💫  Wish List":
                     if st.button("✏️ Edit", key=f"edit_wish_{w['id']}"):
                         st.session_state["editing_wish"] = dict(w)
                         st.session_state["wish_view"] = "➕ Add Wish"
+                        st.session_state["wish_radio_counter"] += 1
                         st.rerun()
                 with col3:
                     if st.button("🗑️ Delete", key=f"del_wish_{w['id']}"):
@@ -1348,6 +1352,7 @@ elif page == "💫  Wish List":
                         supabase.table("wishes").insert(record).execute()
                         st.success("✅ Wish added to your list.")
                     st.session_state["wish_view"] = "💫 Passive Wishes"
+                    st.session_state["wish_radio_counter"] += 1
                     st.rerun()
                 except Exception as ex:
                     st.error(f"Error: {ex}")
@@ -1355,6 +1360,7 @@ elif page == "💫  Wish List":
         if editing_w_id and st.button("Cancel", key="cancel_wish_form"):
             st.session_state["editing_wish"] = None
             st.session_state["wish_view"] = "💫 Passive Wishes"
+            st.session_state["wish_radio_counter"] += 1
             st.rerun()
 
 elif page == "🎯  Goals":
