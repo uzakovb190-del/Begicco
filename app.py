@@ -1638,5 +1638,208 @@ elif page == "🏆  Outcomes":
 
 elif page == "📜  Archive":
     st.markdown('<div class="section-header">📜 Archive</div>', unsafe_allow_html=True)
-    st.markdown('<div class="section-sub">coming in part 6</div>', unsafe_allow_html=True)
-    st.info("This section is being built. Check back after Part 6.")
+    st.markdown('<div class="section-sub">your life, browsable</div>', unsafe_allow_html=True)
+
+    archive_view = st.radio("Archive View", ["🏆 Win/Failure Archive", "📅 Daily Log History", "📊 Quick Stats"],
+                            horizontal=True, label_visibility="collapsed")
+    st.markdown('<hr class="divider">', unsafe_allow_html=True)
+
+    # ============================================================
+    # WIN/FAILURE ARCHIVE
+    # ============================================================
+    if archive_view == "🏆 Win/Failure Archive":
+        filter_type = st.selectbox("Filter", ["All", "win", "fail", "pass", "complete"], label_visibility="collapsed")
+
+        try:
+            query = supabase.table("win_failure_archive").select("*").order("archive_date", desc=True)
+            if filter_type != "All":
+                query = query.eq("result_type", filter_type)
+            entries = query.execute().data or []
+        except:
+            entries = []
+
+        if not entries:
+            st.info("Your win/failure archive is empty. Outcomes you log will appear here permanently.")
+        else:
+            border_colors = {"win": "#4ade80", "pass": "#60a5fa", "fail": "#f87171", "complete": "#fbbf24"}
+            for e in entries:
+                border = border_colors.get(e.get("result_type"), "#444")
+                st.markdown(f"""
+                <div class="card" style="border-left: 3px solid {border};">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.4rem;">
+                        <span style="font-size:1rem;font-weight:800;color:#fff;">{e['title']}</span>
+                        {result_badge(e.get('result_type','pass'))}
+                    </div>
+                    <div style="color:#ccc;font-size:0.9rem;margin-bottom:0.4rem;">{e.get('summary','')}</div>
+                    <div style="color:#888;font-size:0.85rem;font-style:italic;">💡 {e.get('reflection','')}</div>
+                    <div style="margin-top:0.5rem;font-size:0.75rem;color:#555;font-family:'JetBrains Mono',monospace;">{e.get('archive_date','')}</div>
+                </div>
+                """, unsafe_allow_html=True)
+
+    # ============================================================
+    # DAILY LOG HISTORY
+    # ============================================================
+    elif archive_view == "📅 Daily Log History":
+        try:
+            logs = supabase.table("daily_logs").select("*").order("date", desc=True).execute().data or []
+        except:
+            logs = []
+
+        if not logs:
+            st.info("No daily logs yet. Start with today's entry.")
+        else:
+            # Mood trend chart
+            chart_logs = list(reversed(logs))
+            dates = [l["date"] for l in chart_logs]
+            moods = [l.get("mood_score", 5) for l in chart_logs]
+
+            svg_width = 800
+            svg_height = 150
+            padding = 20
+            n = len(moods)
+            if n > 1:
+                x_step = (svg_width - 2 * padding) / (n - 1)
+                points = []
+                for i, m in enumerate(moods):
+                    x = padding + i * x_step
+                    y = svg_height - padding - ((m - 1) / 9) * (svg_height - 2 * padding)
+                    points.append(f"{x:.1f},{y:.1f}")
+                points_str = " ".join(points)
+
+                circles = ""
+                for i, m in enumerate(moods):
+                    x = padding + i * x_step
+                    y = svg_height - padding - ((m - 1) / 9) * (svg_height - 2 * padding)
+                    color = "#4ade80" if m >= 8 else "#facc15" if m >= 5 else "#f87171"
+                    circles += f'<circle cx="{x:.1f}" cy="{y:.1f}" r="3" fill="{color}"/>'
+
+                st.markdown(f"""
+                <div class="card">
+                    <div style="font-size:0.75rem;color:#555;font-family:'JetBrains Mono',monospace;margin-bottom:0.5rem;">MOOD TREND</div>
+                    <svg width="100%" height="{svg_height}" viewBox="0 0 {svg_width} {svg_height}" preserveAspectRatio="none">
+                        <polyline points="{points_str}" fill="none" stroke="#60a5fa" stroke-width="2"/>
+                        {circles}
+                    </svg>
+                    <div style="display:flex;justify-content:space-between;font-size:0.7rem;color:#555;font-family:'JetBrains Mono',monospace;margin-top:0.3rem;">
+                        <span>{dates[0]}</span><span>{dates[-1]}</span>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+
+            st.markdown('<hr class="divider">', unsafe_allow_html=True)
+
+            # Browse by date
+            for log in logs:
+                with st.expander(f"{log['date']} — Mood {log.get('mood_score','—')}/10"):
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        st.markdown(f"**Mood** &nbsp; {mood_badge(log.get('mood_score',5))}", unsafe_allow_html=True)
+                    with col2:
+                        st.markdown(f"**Clarity** &nbsp; {clarity_badge(log.get('mental_clarity','normal'))}", unsafe_allow_html=True)
+                    with col3:
+                        st.markdown(f"**Emotion** &nbsp; `{log.get('dominant_emotion','—')}`")
+
+                    st.markdown(f"**Self Assessment:** {log.get('self_assessment','—')}")
+                    st.markdown(f"**Daily Summary:** {log.get('daily_summary','—')}")
+
+                    accs = log.get('accomplishments') or []
+                    if accs:
+                        st.markdown("**Accomplishments:**")
+                        for a in accs:
+                            st.markdown(f"&nbsp; ✦ {a}")
+
+                    media = log.get('media_consumed') or []
+                    if media:
+                        st.markdown("**Media:**")
+                        for m in media:
+                            st.markdown(f"&nbsp; 🎬 {m}")
+
+                    col1, col2, col3, col4 = st.columns(4)
+                    with col1:
+                        st.markdown(f"**Sleep** `{log.get('sleep_duration','—')} hrs`")
+                    with col2:
+                        st.markdown(f"**Physical** {physical_badge(log.get('physical_state','neutral'))}", unsafe_allow_html=True)
+                    with col3:
+                        st.markdown(f"**Mental** {mental_badge(log.get('mental_state','stable'))}", unsafe_allow_html=True)
+                    with col4:
+                        st.markdown(f"**Spent** `{log.get('daily_spending',0):,.0f}`")
+
+                    st.markdown(f"**Good deed:** {log.get('good_deed','—')}")
+
+    # ============================================================
+    # QUICK STATS
+    # ============================================================
+    else:
+        try:
+            logs = supabase.table("daily_logs").select("*").execute().data or []
+            books = supabase.table("books").select("*").execute().data or []
+            events = supabase.table("life_events").select("*").execute().data or []
+            outcomes = supabase.table("outcomes").select("*").execute().data or []
+        except:
+            logs = books = events = outcomes = []
+
+        total_days = len(logs)
+        avg_mood = (sum(l.get("mood_score", 0) for l in logs) / total_days) if total_days else 0
+
+        from collections import Counter
+        emotions = [l.get("dominant_emotion","").strip().lower() for l in logs if l.get("dominant_emotion")]
+        most_common_emotion = Counter(emotions).most_common(1)[0][0] if emotions else "—"
+
+        finished_books = [b for b in books if b["status"] == "finished"]
+
+        wins = len([o for o in outcomes if o.get("result_type") == "win"])
+        fails = len([o for o in outcomes if o.get("result_type") == "fail"])
+
+        sig_breakdown = Counter(e.get("significance_score", 0) for e in events)
+
+        st.markdown(f"""
+        <div class="metric-row">
+            <div class="metric-card">
+                <div class="metric-value" style="color:#4ade80">{total_days}</div>
+                <div class="metric-label">Days Logged</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-value" style="color:#60a5fa">{avg_mood:.1f}</div>
+                <div class="metric-label">Avg Mood</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-value" style="color:#facc15;font-size:1.2rem;">{most_common_emotion}</div>
+                <div class="metric-label">Top Emotion</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-value" style="color:#fb923c">{len(finished_books)}</div>
+                <div class="metric-label">Books Finished</div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        st.markdown(f"""
+        <div class="metric-row">
+            <div class="metric-card">
+                <div class="metric-value" style="color:#4ade80">{wins}</div>
+                <div class="metric-label">Wins</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-value" style="color:#f87171">{fails}</div>
+                <div class="metric-label">Fails</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-value" style="color:#a78bfa">{len(events)}</div>
+                <div class="metric-label">Life Events</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-value" style="color:#fbbf24">{sig_breakdown.get(5,0)}</div>
+                <div class="metric-label">5★ Moments</div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        st.markdown('<hr class="divider">', unsafe_allow_html=True)
+        st.markdown("""
+        <div class="card">
+            <div style="font-size:0.75rem;color:#555;font-family:'JetBrains Mono',monospace;margin-bottom:0.5rem;">REFLECTION</div>
+            <div style="color:#ccc;">
+                Every number here represents something real you lived through. This archive doesn't judge — it just remembers, so you don't have to carry it all in your head.
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
