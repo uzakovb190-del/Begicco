@@ -260,32 +260,14 @@ nav_options = [
     "📜  Archive",
 ]
 
-top_col1, top_col2 = st.columns([1, 3])
-with top_col1:
-    st.markdown('<div style="font-family:\'Syne\',sans-serif;font-size:1.1rem;font-weight:800;color:#fff;padding-top:0.4rem;">🗂️ Life Archive</div>', unsafe_allow_html=True)
-with top_col2:
-    page = st.selectbox("Navigate", nav_options, label_visibility="collapsed")
-if st.session_state.get("current_page_override"):
-    page = st.session_state["current_page_override"]
+# ============================================================
+# NAVIGATION (sidebar only, single source of truth)
+# ============================================================
+if "nav_override_counter" not in st.session_state:
+    st.session_state["nav_override_counter"] = 0
+if "current_page_override" not in st.session_state:
     st.session_state["current_page_override"] = None
-    sidebar_page = st.radio(
-        "Navigation",
-        options=nav_options,
-        index=nav_options.index(page),
-        label_visibility="collapsed",
-        key=f"sidebar_nav_{st.session_state['nav_override_counter']}"
-    )
 
-    if sidebar_page != page:
-        page = sidebar_page
-        st.session_state["nav_override_counter"] = st.session_state.get("nav_override_counter", 0) + 1
-        st.rerun()
-
-st.markdown('<hr style="border-color:#2a2a2a;margin:0.5rem 0 1.5rem 0;">', unsafe_allow_html=True)
-
-# ============================================
-# SIDEBAR (mirrors top nav)
-# ============================================
 with st.sidebar:
     st.markdown("""
         <div style="padding: 1rem 0 1.5rem 0;">
@@ -299,19 +281,20 @@ with st.sidebar:
         <hr style="border-color: #2a2a2a; margin-bottom: 1rem;">
     """, unsafe_allow_html=True)
 
-    if "nav_override_counter" not in st.session_state:
-        st.session_state["nav_override_counter"] = 0
+    if st.session_state.get("current_page_override"):
+        default_index = nav_options.index(st.session_state["current_page_override"])
+        st.session_state["current_page_override"] = None
+        st.session_state["nav_override_counter"] += 1
+    else:
+        default_index = 0
 
-    sidebar_page = st.radio(
+    page = st.radio(
         "Navigation",
         options=nav_options,
-        index=nav_options.index(page),
+        index=default_index,
         label_visibility="collapsed",
         key=f"sidebar_nav_{st.session_state['nav_override_counter']}"
     )
-
-    if sidebar_page != page:
-        page = sidebar_page
 
     st.markdown("""
         <hr style="border-color: #2a2a2a; margin-top: 1rem;">
@@ -319,7 +302,6 @@ with st.sidebar:
             v1.0 · built for long-term self-awareness
         </div>
     """, unsafe_allow_html=True)
-
 # ============================================
 # HOME PAGE
 # ============================================
