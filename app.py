@@ -1247,10 +1247,10 @@ elif page == "💫  Wish List":
     if "editing_wish" not in st.session_state:
         st.session_state["editing_wish"] = None
 
-    view = st.radio("Wish View", ["💫 Passive Wishes", "➕ Add Wish"],
-                    index=["💫 Passive Wishes", "➕ Add Wish"].index(st.session_state["wish_view"]),
-                    horizontal=True, label_visibility="collapsed", key="wish_view_radio")
-    st.session_state["wish_view"] = view
+    options = ["💫 Passive Wishes", "➕ Add Wish"]
+    current_index = options.index(st.session_state["wish_view"])
+    view = st.radio("Wish View", options, index=current_index,
+                    horizontal=True, label_visibility="collapsed", key=f"wish_radio_{current_index}")
     st.markdown('<hr class="divider">', unsafe_allow_html=True)
 
     # ============================================================
