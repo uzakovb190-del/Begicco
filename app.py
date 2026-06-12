@@ -265,6 +265,9 @@ with top_col1:
     st.markdown('<div style="font-family:\'Syne\',sans-serif;font-size:1.1rem;font-weight:800;color:#fff;padding-top:0.4rem;">🗂️ Life Archive</div>', unsafe_allow_html=True)
 with top_col2:
     page = st.selectbox("Navigate", nav_options, label_visibility="collapsed")
+if st.session_state.get("current_page_override"):
+    page = st.session_state["current_page_override"]
+    st.session_state["current_page_override"] = None
 
 st.markdown('<hr style="border-color:#2a2a2a;margin:0.5rem 0 1.5rem 0;">', unsafe_allow_html=True)
 
@@ -1453,8 +1456,181 @@ elif page == "🎯  Goals":
 
 elif page == "🏆  Outcomes":
     st.markdown('<div class="section-header">🏆 Outcomes</div>', unsafe_allow_html=True)
-    st.markdown('<div class="section-sub">coming in part 5</div>', unsafe_allow_html=True)
-    st.info("This section is being built. Check back after Part 5.")
+    st.markdown('<div class="section-sub">where goals end and become permanent record</div>', unsafe_allow_html=True)
+
+    if "outcome_view" not in st.session_state:
+        st.session_state["outcome_view"] = "📋 All Outcomes"
+    if "editing_outcome" not in st.session_state:
+        st.session_state["editing_outcome"] = None
+    if "outcome_goal" not in st.session_state:
+        st.session_state["outcome_goal"] = None
+
+    # If a goal was passed in to end (from Goals page), force Log view
+    if st.session_state.get("outcome_goal"):
+        st.session_state["outcome_view"] = "➕ Log Outcome"
+
+    options = ["📋 All Outcomes", "➕ Log Outcome"]
+    current_index = options.index(st.session_state["outcome_view"])
+    view = st.radio("Outcome View", options, index=current_index,
+                    horizontal=True, label_visibility="collapsed", key=f"outcome_radio_{current_index}")
+
+    st.markdown('<hr class="divider">', unsafe_allow_html=True)
+
+    # ============================================================
+    # ALL OUTCOMES
+    # ============================================================
+    if view == "📋 All Outcomes":
+        filter_type = st.selectbox("Filter by result", ["All", "win", "fail", "pass", "complete"], label_visibility="collapsed")
+
+        try:
+            query = supabase.table("outcomes").select("*").order("outcome_date", desc=True)
+            if filter_type != "All":
+                query = query.eq("result_type", filter_type)
+            outcomes = query.execute().data or []
+        except:
+            outcomes = []
+
+        if not outcomes:
+            st.info("No outcomes logged yet. End a goal from the Goals page to record one.")
+        else:
+            border_colors = {"win": "#4ade80", "pass": "#60a5fa", "fail": "#f87171", "complete": "#fbbf24"}
+            for o in outcomes:
+                border = border_colors.get(o.get("result_type"), "#444")
+                st.markdown(f"""
+                <div class="card" style="border-left: 3px solid {border};">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;">
+                        <span style="font-size:1rem;font-weight:800;color:#fff;">{o['outcome_title']}</span>
+                        {result_badge(o.get('result_type','pass'))}
+                    </div>
+                    <div style="color:#ccc;font-size:0.9rem;margin-bottom:0.4rem;"><b>Result:</b> {o.get('score_or_result','')}</div>
+                    <div style="color:#888;font-size:0.85rem;font-style:italic;margin-bottom:0.4rem;">💭 {o.get('emotional_reaction','')}</div>
+                    <div style="color:#888;font-size:0.85rem;margin-bottom:0.4rem;"><b>Why:</b> {o.get('causal_analysis','')}</div>
+                    <div style="color:#aaa;font-size:0.85rem;"><b>💡 Lesson:</b> {o.get('lessons_learned','')}</div>
+                    <div style="margin-top:0.5rem;font-size:0.75rem;color:#555;font-family:'JetBrains Mono',monospace;">{o.get('outcome_date','')}</div>
+                </div>
+                """, unsafe_allow_html=True)
+
+                col_edit, col_del = st.columns([1, 1])
+                with col_edit:
+                    if st.button("✏️ Edit", key=f"edit_outcome_{o['id']}"):
+                        st.session_state["editing_outcome"] = dict(o)
+                        st.session_state["outcome_view"] = "➕ Log Outcome"
+                        st.rerun()
+                with col_del:
+                    if st.button("🗑️ Delete", key=f"del_outcome_{o['id']}"):
+                        st.session_state[f"confirm_del_o_{o['id']}"] = True
+                        st.rerun()
+                if st.session_state.get(f"confirm_del_o_{o['id']}", False):
+                    st.warning(f"Delete **{o['outcome_title']}**? This cannot be undone.")
+                    c1, c2 = st.columns(2)
+                    with c1:
+                        if st.button("Yes, delete", key=f"yes_del_o_{o['id']}"):
+                            supabase.table("outcomes").delete().eq("id", o["id"]).execute()
+                            supabase.table("win_failure_archive").delete().eq("outcome_id", o["id"]).execute()
+                            st.session_state[f"confirm_del_o_{o['id']}"] = False
+                            st.rerun()
+                    with c2:
+                        if st.button("Cancel", key=f"cancel_del_o_{o['id']}"):
+                            st.session_state[f"confirm_del_o_{o['id']}"] = False
+                            st.rerun()
+
+    # ============================================================
+    # LOG / EDIT OUTCOME
+    # ============================================================
+    else:
+        editing_o = st.session_state.get("editing_outcome", None)
+        editing_o_id = editing_o["id"] if editing_o else None
+        goal_ctx = st.session_state.get("outcome_goal", None)
+
+        if editing_o:
+            st.markdown("#### ✏️ Editing Outcome")
+        elif goal_ctx:
+            st.markdown(f"#### 🏁 Ending Goal: *{goal_ctx['goal_title']}*")
+        else:
+            st.markdown("#### Log a New Outcome")
+
+        with st.form("outcome_form"):
+            default_title = editing_o["outcome_title"] if editing_o else (goal_ctx["goal_title"] if goal_ctx else "")
+            o_title = st.text_input("Outcome Title", value=default_title, placeholder="e.g. IELTS attempt, Startup pitch...")
+
+            result_types = ["win", "fail", "pass", "complete"]
+            default_result = editing_o["result_type"] if editing_o and editing_o.get("result_type") in result_types else "complete"
+            o_result_type = st.selectbox("Result Type", result_types, index=result_types.index(default_result))
+
+            o_score = st.text_input("Score / Result", value=editing_o.get("score_or_result","") if editing_o else "", placeholder="e.g. Scored 8.5, Got the job, Didn't finish...")
+            o_emotion = st.text_area("Emotional Reaction", value=editing_o.get("emotional_reaction","") if editing_o else "", height=80, placeholder="How did you feel about it?")
+            o_env = st.text_area("Environment Context", value=editing_o.get("environment_context","") if editing_o else "", height=80, placeholder="What was going on around you at the time?")
+            o_causal = st.text_area("Causal Analysis", value=editing_o.get("causal_analysis","") if editing_o else "", height=80, placeholder="Why did it go this way?")
+            o_lessons = st.text_area("Lessons Learned", value=editing_o.get("lessons_learned","") if editing_o else "", height=80, placeholder="What will you take from this?")
+
+            from datetime import datetime
+            default_date = datetime.strptime(editing_o["outcome_date"], "%Y-%m-%d").date() if editing_o and editing_o.get("outcome_date") else date.today()
+            o_date = st.date_input("Outcome Date", value=default_date)
+
+            submitted = st.form_submit_button("💾 Update Outcome" if editing_o else "💾 Save Outcome")
+
+        if submitted:
+            if not o_title.strip():
+                st.error("Please enter an outcome title.")
+            else:
+                try:
+                    record = {
+                        "outcome_title": o_title.strip(),
+                        "result_type": o_result_type,
+                        "score_or_result": o_score.strip(),
+                        "emotional_reaction": o_emotion.strip(),
+                        "environment_context": o_env.strip(),
+                        "causal_analysis": o_causal.strip(),
+                        "lessons_learned": o_lessons.strip(),
+                        "outcome_date": str(o_date),
+                    }
+
+                    if editing_o_id:
+                        supabase.table("outcomes").update(record).eq("id", editing_o_id).execute()
+                        # Update archive copy too
+                        supabase.table("win_failure_archive").update({
+                            "title": o_title.strip(),
+                            "result_type": o_result_type,
+                            "summary": o_score.strip(),
+                            "reflection": o_lessons.strip(),
+                            "archive_date": str(o_date)
+                        }).eq("outcome_id", editing_o_id).execute()
+                        st.success("✅ Outcome updated.")
+                        st.session_state["editing_outcome"] = None
+                    else:
+                        if goal_ctx:
+                            record["linked_goal_id"] = goal_ctx["id"]
+
+                        result = supabase.table("outcomes").insert(record).execute()
+                        new_outcome_id = result.data[0]["id"]
+
+                        # Push to win/failure archive
+                        supabase.table("win_failure_archive").insert({
+                            "outcome_id": new_outcome_id,
+                            "archive_date": str(o_date),
+                            "title": o_title.strip(),
+                            "result_type": o_result_type,
+                            "summary": o_score.strip(),
+                            "reflection": o_lessons.strip()
+                        }).execute()
+
+                        # Mark linked goal as completed
+                        if goal_ctx:
+                            supabase.table("goals").update({"status": "completed"}).eq("id", goal_ctx["id"]).execute()
+                            st.session_state["outcome_goal"] = None
+
+                        st.success("✅ Outcome saved and archived.")
+
+                    st.session_state["outcome_view"] = "📋 All Outcomes"
+                    st.rerun()
+                except Exception as ex:
+                    st.error(f"Error: {ex}")
+
+        if (editing_o_id or goal_ctx) and st.button("Cancel", key="cancel_outcome_form"):
+            st.session_state["editing_outcome"] = None
+            st.session_state["outcome_goal"] = None
+            st.session_state["outcome_view"] = "📋 All Outcomes"
+            st.rerun()
 
 elif page == "📜  Archive":
     st.markdown('<div class="section-header">📜 Archive</div>', unsafe_allow_html=True)
