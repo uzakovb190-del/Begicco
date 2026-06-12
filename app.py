@@ -1234,10 +1234,10 @@ elif page == "🎯  Goals":
                         st.rerun()
                 with col2:
                     if st.button("🏁 End Goal → Log Outcome", key=f"end_{g['id']}", type="primary"):
-                st.session_state["outcome_goal"] = dict(g)
-                st.session_state["current_page_override"] = "🏆  Outcomes"
-                st.session_state["nav_override_counter"] = st.session_state.get("nav_override_counter", 0) + 1
-                st.rerun()
+                        st.session_state["outcome_goal"] = dict(g)
+                        st.session_state["current_page_override"] = "🏆  Outcomes"
+                        st.session_state["nav_override_counter"] = st.session_state.get("nav_override_counter", 0) + 1
+                        st.rerun()
             elif g["status"] == "paused":
                 if st.button("▶️ Resume Goal", key=f"resume_{g['id']}"):
                     supabase.table("goals").update({"status": "active"}).eq("id", g["id"]).execute()
