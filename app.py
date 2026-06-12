@@ -1238,6 +1238,122 @@ elif page == "🎯  Goals":
 
             st.markdown('<hr class="divider">', unsafe_allow_html=True)
 
+elif page == "💫  Wish List":
+    st.markdown('<div class="section-header">💫 Wish List</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-sub">no deadlines · no pressure · just things you want</div>', unsafe_allow_html=True)
+
+    if "wish_view" not in st.session_state:
+        st.session_state["wish_view"] = "💫 Passive Wishes"
+    if "editing_wish" not in st.session_state:
+        st.session_state["editing_wish"] = None
+
+    view = st.radio("Wish View", ["💫 Passive Wishes", "➕ Add Wish"],
+                    index=["💫 Passive Wishes", "➕ Add Wish"].index(st.session_state["wish_view"]),
+                    horizontal=True, label_visibility="collapsed")
+    st.session_state["wish_view"] = view
+    st.markdown('<hr class="divider">', unsafe_allow_html=True)
+
+    # ============================================================
+    # PASSIVE WISHES
+    # ============================================================
+    if view == "💫 Passive Wishes":
+        try:
+            wishes = supabase.table("wishes").select("*").eq("status", "passive").order("created_at", desc=True).execute().data or []
+        except:
+            wishes = []
+
+        if not wishes:
+            st.info("No wishes yet. Add anything you want to pursue someday.")
+        else:
+            for w in wishes:
+                st.markdown(f"""
+                <div class="card">
+                    <div style="font-size:1rem;font-weight:800;color:#fff;margin-bottom:0.3rem;">✦ {w['wish_title']}</div>
+                    <div style="color:#aaa;font-size:0.9rem;">{w.get('description','')}</div>
+                    <div style="margin-top:0.4rem;font-size:0.75rem;color:#555;font-family:'JetBrains Mono',monospace;">added {w.get('date_added','')}</div>
+                </div>
+                """, unsafe_allow_html=True)
+
+                col1, col2, col3 = st.columns([1, 1, 1])
+                with col1:
+                    if st.button("🎯 Activate as Goal", key=f"activate_{w['id']}", type="primary"):
+                        try:
+                            supabase.table("wishes").update({"status": "activated"}).eq("id", w["id"]).execute()
+                            supabase.table("goals").insert({
+                                "goal_title": w["wish_title"],
+                                "linked_wish_id": w["id"],
+                                "status": "active"
+                            }).execute()
+                            st.success(f"'{w['wish_title']}' is now an active goal!")
+                            st.rerun()
+                        except Exception as ex:
+                            st.error(f"Error: {ex}")
+                with col2:
+                    if st.button("✏️ Edit", key=f"edit_wish_{w['id']}"):
+                        st.session_state["editing_wish"] = dict(w)
+                        st.session_state["wish_view"] = "➕ Add Wish"
+                        st.rerun()
+                with col3:
+                    if st.button("🗑️ Delete", key=f"del_wish_{w['id']}"):
+                        st.session_state[f"confirm_del_w_{w['id']}"] = True
+                        st.rerun()
+
+                if st.session_state.get(f"confirm_del_w_{w['id']}", False):
+                    st.warning(f"Delete **{w['wish_title']}**? This cannot be undone.")
+                    c1, c2 = st.columns(2)
+                    with c1:
+                        if st.button("Yes, delete", key=f"yes_del_w_{w['id']}"):
+                            supabase.table("wishes").delete().eq("id", w["id"]).execute()
+                            st.session_state[f"confirm_del_w_{w['id']}"] = False
+                            st.rerun()
+                    with c2:
+                        if st.button("Cancel", key=f"cancel_del_w_{w['id']}"):
+                            st.session_state[f"confirm_del_w_{w['id']}"] = False
+                            st.rerun()
+
+                st.markdown('<hr class="divider">', unsafe_allow_html=True)
+
+    # ============================================================
+    # ADD / EDIT WISH
+    # ============================================================
+    else:
+        editing_w = st.session_state.get("editing_wish", None)
+        editing_w_id = editing_w["id"] if editing_w else None
+        st.markdown(f"#### {'✏️ Editing Wish' if editing_w else 'What do you want?'}")
+
+        with st.form("wish_form"):
+            w_title = st.text_input("Wish Title", value=editing_w["wish_title"] if editing_w else "", placeholder="e.g. Learn Japanese, Visit Japan, Build a startup...")
+            w_desc  = st.text_area("Description (optional)", value=editing_w.get("description","") if editing_w else "", height=100, placeholder="Any details, context, or why this matters to you...")
+            submitted = st.form_submit_button("💾 Update Wish" if editing_w else "💾 Add Wish")
+
+        if submitted:
+            if not w_title.strip():
+                st.error("Please enter a wish title.")
+            else:
+                try:
+                    record = {
+                        "wish_title": w_title.strip(),
+                        "description": w_desc.strip(),
+                    }
+                    if editing_w_id:
+                        supabase.table("wishes").update(record).eq("id", editing_w_id).execute()
+                        st.success("✅ Wish updated.")
+                        st.session_state["editing_wish"] = None
+                    else:
+                        record["status"] = "passive"
+                        record["date_added"] = str(date.today())
+                        supabase.table("wishes").insert(record).execute()
+                        st.success("✅ Wish added to your list.")
+                    st.session_state["wish_view"] = "💫 Passive Wishes"
+                    st.rerun()
+                except Exception as ex:
+                    st.error(f"Error: {ex}")
+
+        if editing_w_id and st.button("Cancel", key="cancel_wish_form"):
+            st.session_state["editing_wish"] = None
+            st.session_state["wish_view"] = "💫 Passive Wishes"
+            st.rerun()
+
 elif page == "🎯  Goals":
     st.markdown('<div class="section-header">🎯 Goals</div>', unsafe_allow_html=True)
     st.markdown('<div class="section-sub">activated wishes · tracked session by session</div>', unsafe_allow_html=True)
