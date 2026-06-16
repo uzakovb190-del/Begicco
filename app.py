@@ -187,6 +187,16 @@ st.markdown("""
     footer {visibility: hidden;}
     header {visibility: hidden;}
 </style>
+header {visibility: hidden;}
+</style>
+""", unsafe_allow_html=True)
+
+st.markdown("""
+<style>
+    .stApp { background: transparent; }
+</style>
+...
+""", unsafe_allow_html=True)
 st.markdown("""
 <style>
     .stApp { background: transparent; }
