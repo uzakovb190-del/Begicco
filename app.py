@@ -230,19 +230,19 @@ st.markdown(f"""
         transition: width 0.3s ease;
     }}
     /* Force sidebar toggle visible */
-    [data-testid="stSidebarCollapseButton"] {{
+    [data-testid="stSidebarCollapseButton"] {
         background-color: #1a1a3a !important;
         border: 1px solid #a78bfa !important;
         border-radius: 8px !important;
         opacity: 1 !important;
         visibility: visible !important;
-    }}
-    [data-testid="stSidebarCollapseButton"] svg {{
+    }
+    [data-testid="stSidebarCollapseButton"] svg {
         fill: #a78bfa !important;
-    }}
-    #MainMenu {{visibility: hidden;}}
-    footer {{visibility: hidden;}}
-    header {{visibility: hidden;}}
+    }
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    header {visibility: hidden;}
 </style>
 """, unsafe_allow_html=True)
 
@@ -353,6 +353,41 @@ with st.sidebar:
         </div>
     """, unsafe_allow_html=True)
 
+
+# ============================================
+# JS SIDEBAR TOGGLE OVERLAY
+# ============================================
+st.markdown("""
+<script>
+    function injectToggle() {
+        const btn = document.querySelector('[data-testid="stSidebarCollapseButton"]');
+        if (btn) {
+            btn.style.cssText = `
+                position: fixed !important;
+                top: 10px !important;
+                left: 10px !important;
+                z-index: 9999999 !important;
+                background: #1a1a3a !important;
+                border: 1px solid #a78bfa !important;
+                border-radius: 8px !important;
+                width: 36px !important;
+                height: 36px !important;
+                display: flex !important;
+                align-items: center !important;
+                justify-content: center !important;
+                opacity: 1 !important;
+                visibility: visible !important;
+                cursor: pointer !important;
+            `;
+            const svg = btn.querySelector('svg');
+            if (svg) svg.style.fill = '#a78bfa';
+        } else {
+            setTimeout(injectToggle, 300);
+        }
+    }
+    setTimeout(injectToggle, 500);
+</script>
+""", unsafe_allow_html=True)
 
 # ============================================
 # HOME PAGE
