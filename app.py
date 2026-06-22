@@ -229,7 +229,7 @@ st.markdown(f"""
         height: 8px;
         transition: width 0.3s ease;
     }}
-/* Force sidebar toggle visible */
+    /* Force sidebar toggle visible */
     [data-testid="stSidebarCollapseButton"] {
         background-color: #1a1a3a !important;
         border: 1px solid #a78bfa !important;
