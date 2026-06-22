@@ -240,9 +240,9 @@ st.markdown(f"""
     [data-testid="stSidebarCollapseButton"] svg {
         fill: #a78bfa !important;
     }
-    #MainMenu {{visibility: hidden;}}
-    footer {{visibility: hidden;}}
-    header {{visibility: hidden;}}
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    header {visibility: hidden;}
 </style>
 """, unsafe_allow_html=True)
 
