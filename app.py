@@ -154,9 +154,6 @@ st.markdown("""
 
     /* Metric cards */
     .metric-row {
-
-    /* Metric cards */
-    .metric-row {
         display: flex;
         gap: 1rem;
         margin-bottom: 1.5rem;
@@ -186,6 +183,59 @@ st.markdown("""
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     header {visibility: hidden;}
+
+    /* ── LIGHT MODE overrides ── */
+    @media (prefers-color-scheme: light) {
+        html, body, [class*="css"] {
+            background-color: #f5f5f0 !important;
+            color: #1a1a1a !important;
+        }
+        section[data-testid="stSidebar"] {
+            background-color: #eeede8 !important;
+            border-right: 1px solid #ddd !important;
+        }
+        .card {
+            background: #ffffff !important;
+            border: 1px solid #e0e0e0 !important;
+        }
+        .metric-card {
+            background: #ffffff !important;
+            border: 1px solid #e0e0e0 !important;
+        }
+        .section-header { color: #111 !important; }
+        .section-sub { color: #888 !important; }
+        .metric-label { color: #999 !important; }
+        .divider { border-top: 1px solid #e0e0e0 !important; }
+        .stTextInput > div > div > input,
+        .stTextArea > div > div > textarea,
+        .stSelectbox > div > div {
+            background-color: #ffffff !important;
+            border: 1px solid #ccc !important;
+            color: #1a1a1a !important;
+        }
+        .stButton > button {
+            background-color: #f0f0f0 !important;
+            color: #1a1a1a !important;
+            border: 1px solid #ccc !important;
+        }
+        .stButton > button:hover {
+            border-color: #16a34a !important;
+            color: #16a34a !important;
+            background-color: #f0fdf4 !important;
+        }
+        .stButton > button[kind="primary"] {
+            background-color: #f0fdf4 !important;
+            border-color: #16a34a !important;
+            color: #16a34a !important;
+        }
+        .badge-green  { background: #f0fdf4; color: #16a34a; border: 1px solid #16a34a; }
+        .badge-yellow { background: #fefce8; color: #ca8a04; border: 1px solid #ca8a04; }
+        .badge-red    { background: #fef2f2; color: #dc2626; border: 1px solid #dc2626; }
+        .badge-blue   { background: #eff6ff; color: #2563eb; border: 1px solid #2563eb; }
+        .badge-orange { background: #fff7ed; color: #ea580c; border: 1px solid #ea580c; }
+        .badge-grey   { background: #f9fafb; color: #6b7280; border: 1px solid #d1d5db; }
+        .badge-gold   { background: #fffbeb; color: #b45309; border: 1px solid #b45309; }
+    }
 </style>
 """, unsafe_allow_html=True)
 
