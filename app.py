@@ -33,7 +33,7 @@ st.set_page_config(
 st.markdown("""
 <style>
     /* Import font */
-    @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Syne:wght@400;700;800&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Syne:wght@400;700;800&family=Playfair+Display:ital,wght@0,400;0,700;1,400;1,700&display=swap');
 
     /* Base */
     html, body, [class*="css"] {
@@ -47,6 +47,7 @@ st.markdown("""
         background-color: #141414;
         border-right: 1px solid #2a2a2a;
     }
+    .sidebar-title { color: #ffffff; }
 
     /* Main area */
     .main .block-container {
@@ -183,59 +184,6 @@ st.markdown("""
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     header {visibility: hidden;}
-
-    /* ── LIGHT MODE overrides ── */
-    @media (prefers-color-scheme: light) {
-        html, body, [class*="css"] {
-            background-color: #f5f5f0 !important;
-            color: #1a1a1a !important;
-        }
-        section[data-testid="stSidebar"] {
-            background-color: #eeede8 !important;
-            border-right: 1px solid #ddd !important;
-        }
-        .card {
-            background: #ffffff !important;
-            border: 1px solid #e0e0e0 !important;
-        }
-        .metric-card {
-            background: #ffffff !important;
-            border: 1px solid #e0e0e0 !important;
-        }
-        .section-header { color: #111 !important; }
-        .section-sub { color: #888 !important; }
-        .metric-label { color: #999 !important; }
-        .divider { border-top: 1px solid #e0e0e0 !important; }
-        .stTextInput > div > div > input,
-        .stTextArea > div > div > textarea,
-        .stSelectbox > div > div {
-            background-color: #ffffff !important;
-            border: 1px solid #ccc !important;
-            color: #1a1a1a !important;
-        }
-        .stButton > button {
-            background-color: #f0f0f0 !important;
-            color: #1a1a1a !important;
-            border: 1px solid #ccc !important;
-        }
-        .stButton > button:hover {
-            border-color: #16a34a !important;
-            color: #16a34a !important;
-            background-color: #f0fdf4 !important;
-        }
-        .stButton > button[kind="primary"] {
-            background-color: #f0fdf4 !important;
-            border-color: #16a34a !important;
-            color: #16a34a !important;
-        }
-        .badge-green  { background: #f0fdf4; color: #16a34a; border: 1px solid #16a34a; }
-        .badge-yellow { background: #fefce8; color: #ca8a04; border: 1px solid #ca8a04; }
-        .badge-red    { background: #fef2f2; color: #dc2626; border: 1px solid #dc2626; }
-        .badge-blue   { background: #eff6ff; color: #2563eb; border: 1px solid #2563eb; }
-        .badge-orange { background: #fff7ed; color: #ea580c; border: 1px solid #ea580c; }
-        .badge-grey   { background: #f9fafb; color: #6b7280; border: 1px solid #d1d5db; }
-        .badge-gold   { background: #fffbeb; color: #b45309; border: 1px solid #b45309; }
-    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -359,7 +307,7 @@ with st.sidebar:
 # HOME PAGE
 # ============================================
 if page == "🏠  Home":
-    st.markdown('<div class="section-header">Good to see you.</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-header" style="font-size:2.2rem;">Welcome back, Captain 🫡</div>', unsafe_allow_html=True)
     st.markdown(f'<div class="section-sub">Today is {date.today().strftime("%A, %B %d %Y")} · Your archive is running.</div>', unsafe_allow_html=True)
 
     # Quick stats
@@ -371,35 +319,40 @@ if page == "🏠  Home":
     except:
         total_logs = total_goals = total_wishes = total_outcomes = 0
 
-    st.markdown(f"""
-    <div class="metric-row">
-        <div class="metric-card">
-            <div class="metric-value" style="color:#4ade80">{total_logs}</div>
-            <div class="metric-label">Days Logged</div>
-        </div>
-        <div class="metric-card">
-            <div class="metric-value" style="color:#60a5fa">{total_goals}</div>
-            <div class="metric-label">Active Goals</div>
-        </div>
-        <div class="metric-card">
-            <div class="metric-value" style="color:#facc15">{total_wishes}</div>
-            <div class="metric-label">Wishes</div>
-        </div>
-        <div class="metric-card">
-            <div class="metric-value" style="color:#fb923c">{total_outcomes}</div>
-            <div class="metric-label">Outcomes</div>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.markdown(f'''<div class="metric-card"><div class="metric-value" style="color:#4ade80">{total_logs}</div><div class="metric-label">Days Logged</div></div>''', unsafe_allow_html=True)
+        if st.button("→ Daily Log", key="home_dailylog", use_container_width=True):
+            st.session_state["current_page_override"] = "📝  Daily Log"
+            st.session_state["nav_override_counter"] = st.session_state.get("nav_override_counter", 0) + 1
+            st.rerun()
+    with col2:
+        st.markdown(f'''<div class="metric-card"><div class="metric-value" style="color:#60a5fa">{total_goals}</div><div class="metric-label">Active Goals</div></div>''', unsafe_allow_html=True)
+        if st.button("→ Goals", key="home_goals", use_container_width=True):
+            st.session_state["current_page_override"] = "🎯  Goals"
+            st.session_state["nav_override_counter"] = st.session_state.get("nav_override_counter", 0) + 1
+            st.rerun()
+    with col3:
+        st.markdown(f'''<div class="metric-card"><div class="metric-value" style="color:#facc15">{total_wishes}</div><div class="metric-label">Wishes</div></div>''', unsafe_allow_html=True)
+        if st.button("→ Wish List", key="home_wishes", use_container_width=True):
+            st.session_state["current_page_override"] = "💫  Wish List"
+            st.session_state["nav_override_counter"] = st.session_state.get("nav_override_counter", 0) + 1
+            st.rerun()
+    with col4:
+        st.markdown(f'''<div class="metric-card"><div class="metric-value" style="color:#fb923c">{total_outcomes}</div><div class="metric-label">Outcomes</div></div>''', unsafe_allow_html=True)
+        if st.button("→ Outcomes", key="home_outcomes", use_container_width=True):
+            st.session_state["current_page_override"] = "🏆  Outcomes"
+            st.session_state["nav_override_counter"] = st.session_state.get("nav_override_counter", 0) + 1
+            st.rerun()
 
     st.markdown('<hr class="divider">', unsafe_allow_html=True)
 
     st.markdown("""
     <div class="card">
-        <div style="font-size:0.8rem; color:#666; font-family:'JetBrains Mono',monospace; margin-bottom:0.5rem;">WHAT THIS IS</div>
-        <div style="color:#ccc; line-height:1.7;">
+        <div style="font-size:0.75rem; color:#666; font-family:'JetBrains Mono',monospace; margin-bottom:0.6rem; letter-spacing:1px;">WHAT THIS IS</div>
+        <div class="chivalry" style="font-size:1.05rem; line-height:1.9;">
             This is your private life archive. Not a productivity tool. Not a habit tracker.<br>
-            A structured memory of who you are, what you tried, and what actually happened.<br><br>
+            <em>A structured memory of who you are, what you tried, and what actually happened.</em><br><br>
             Every entry you make becomes a permanent, queryable record of your life.
         </div>
     </div>
@@ -407,8 +360,8 @@ if page == "🏠  Home":
 
     st.markdown("""
     <div class="card">
-        <div style="font-size:0.8rem; color:#666; font-family:'JetBrains Mono',monospace; margin-bottom:0.8rem;">QUICK START</div>
-        <div style="color:#ccc; font-size:0.9rem; line-height:2;">
+        <div style="font-size:0.75rem; color:#666; font-family:'JetBrains Mono',monospace; margin-bottom:0.8rem; letter-spacing:1px;">QUICK START</div>
+        <div class="chivalry" style="font-size:1rem; line-height:2.2;">
             📝 &nbsp;<b>Daily Log</b> — start here every day<br>
             💫 &nbsp;<b>Wish List</b> — add anything you want to pursue<br>
             🎯 &nbsp;<b>Goals</b> — activate a wish and start tracking<br>
