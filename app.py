@@ -1,25 +1,20 @@
 import streamlit as st
 from supabase import create_client, Client
 from datetime import date
+import base64
 
 # ============================================
 # CONFIG
 # ============================================
 SUPABASE_URL = "https://gojnzhpapqzodzadetek.supabase.co"
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdvam56aHBhcHF6b2R6YWRldGVrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA5MzU4MTcsImV4cCI6MjA5NjUxMTgxN30.5Y2-MXRBmPt-ps1JZ-52qYi2g9lQOED_Lb69uVAwzxk"  # paste your eyJ... key here
+SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdvam56aHBhcHF6b2R6YWRldGVrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA5MzU4MTcsImV4cCI6MjA5NjUxMTgxN30.5Y2-MXRBmPt-ps1JZ-52qYi2g9lQOED_Lb69uVAwzxk"
 
-# ============================================
-# SUPABASE CLIENT
-# ============================================
 @st.cache_resource
 def init_supabase() -> Client:
     return create_client(SUPABASE_URL, SUPABASE_KEY)
 
 supabase = init_supabase()
 
-# ============================================
-# PAGE CONFIG
-# ============================================
 st.set_page_config(
     page_title="Life Archive",
     page_icon="🗂️",
@@ -28,52 +23,90 @@ st.set_page_config(
 )
 
 # ============================================
-# GLOBAL STYLES
+# LOAD WALLPAPER FROM SUPABASE
 # ============================================
-st.markdown("""
+def get_wallpaper():
+    try:
+        r = supabase.table("settings").select("value").eq("key", "wallpaper_b64").execute()
+        if r.data:
+            return r.data[0]["value"]
+    except:
+        pass
+    return None
+
+def get_overlay_opacity():
+    try:
+        r = supabase.table("settings").select("value").eq("key", "overlay_opacity").execute()
+        if r.data:
+            return float(r.data[0]["value"])
+    except:
+        pass
+    return 0.6
+
+wallpaper_b64 = get_wallpaper()
+overlay_opacity = get_overlay_opacity()
+
+# ============================================
+# GLOBAL STYLES — SOFT NOIR THEME
+# ============================================
+wallpaper_css = ""
+if wallpaper_b64:
+    wallpaper_css = f"""
+    .stApp {{
+        background-image: url("data:image/jpeg;base64,{wallpaper_b64}");
+        background-size: cover;
+        background-position: center;
+        background-attachment: fixed;
+    }}
+    .stApp::before {{
+        content: '';
+        position: fixed;
+        top: 0; left: 0; right: 0; bottom: 0;
+        background: rgba(10, 10, 26, {overlay_opacity});
+        z-index: 0;
+        pointer-events: none;
+    }}
+    """
+
+st.markdown(f"""
 <style>
-    /* Import font */
     @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Syne:wght@400;700;800&family=Playfair+Display:ital,wght@0,400;0,700;1,400;1,700&display=swap');
 
-    /* Base */
-    html, body, [class*="css"] {
+    {wallpaper_css}
+
+    html, body, [class*="css"] {{
         font-family: 'Syne', sans-serif;
-        background-color: #0e0e0e;
-        color: #e8e8e8;
-    }
+        background-color: #0a0a1a;
+        color: #e8e0ff;
+    }}
 
-    /* Sidebar */
-    section[data-testid="stSidebar"] {
-        background-color: #141414;
-        border-right: 1px solid #2a2a2a;
-    }
-    .sidebar-title { color: #ffffff; }
+    section[data-testid="stSidebar"] {{
+        background-color: #0d0d22 !important;
+        border-right: 1px solid #2a2a4a !important;
+    }}
 
-    /* Main area */
-    .main .block-container {
+    .main .block-container {{
         padding-top: 2rem;
         padding-bottom: 2rem;
-    }
+    }}
 
-    /* Section header */
-    .section-header {
+    .section-header {{
         font-family: 'Syne', sans-serif;
         font-size: 1.8rem;
         font-weight: 800;
         letter-spacing: -0.5px;
         margin-bottom: 0.2rem;
-        color: #ffffff;
-    }
+        color: #e8e0ff;
+    }}
 
-    .section-sub {
+    .section-sub {{
         font-size: 0.85rem;
-        color: #666;
+        color: #3a3a6a;
         margin-bottom: 1.5rem;
         font-family: 'JetBrains Mono', monospace;
-    }
+    }}
 
-    /* Color level badges */
-    .badge {
+    .badge {{
         display: inline-block;
         padding: 2px 10px;
         border-radius: 20px;
@@ -81,114 +114,130 @@ st.markdown("""
         font-weight: 700;
         font-family: 'JetBrains Mono', monospace;
         letter-spacing: 0.5px;
-    }
-    .badge-green  { background: #1a3a2a; color: #4ade80; border: 1px solid #4ade80; }
-    .badge-yellow { background: #3a2e0a; color: #facc15; border: 1px solid #facc15; }
-    .badge-red    { background: #3a1212; color: #f87171; border: 1px solid #f87171; }
-    .badge-blue   { background: #0f2640; color: #60a5fa; border: 1px solid #60a5fa; }
-    .badge-orange { background: #3a1f0a; color: #fb923c; border: 1px solid #fb923c; }
-    .badge-grey   { background: #1e1e1e; color: #9ca3af; border: 1px solid #444; }
-    .badge-gold   { background: #3a2e00; color: #fbbf24; border: 1px solid #fbbf24; }
+    }}
+    .badge-green  {{ background: #1a3a2a; color: #4ade80; border: 1px solid #4ade80; }}
+    .badge-yellow {{ background: #3a2e0a; color: #facc15; border: 1px solid #facc15; }}
+    .badge-red    {{ background: #3a1212; color: #f87171; border: 1px solid #f87171; }}
+    .badge-blue   {{ background: #1a1a3a; color: #818cf8; border: 1px solid #818cf8; }}
+    .badge-orange {{ background: #3a1f0a; color: #fb923c; border: 1px solid #fb923c; }}
+    .badge-grey   {{ background: #1e1e2e; color: #9ca3af; border: 1px solid #444; }}
+    .badge-gold   {{ background: #3a2e00; color: #fbbf24; border: 1px solid #fbbf24; }}
+    .badge-purple {{ background: #1a1a3a; color: #a78bfa; border: 1px solid #a78bfa; }}
 
-    /* Cards */
-    .card {
-        background: #161616;
-        border: 1px solid #2a2a2a;
+    .card {{
+        background: #0d0d22;
+        border: 1px solid #2a2a4a;
         border-radius: 12px;
         padding: 1.2rem 1.4rem;
         margin-bottom: 1rem;
-    }
+    }}
 
-    /* Divider */
-    .divider {
+    .divider {{
         border: none;
-        border-top: 1px solid #2a2a2a;
+        border-top: 1px solid #2a2a4a;
         margin: 1.5rem 0;
-    }
+    }}
 
-    /* Inputs */
     .stTextInput > div > div > input,
     .stTextArea > div > div > textarea,
-    .stSelectbox > div > div {
-        background-color: #1a1a1a !important;
-        border: 1px solid #2e2e2e !important;
-        color: #e8e8e8 !important;
+    .stSelectbox > div > div {{
+        background-color: #0d0d22 !important;
+        border: 1px solid #2a2a4a !important;
+        color: #e8e0ff !important;
         border-radius: 8px !important;
-    }
+    }}
 
-    /* Buttons */
-    .stButton > button {
-        background-color: #1a1a1a;
-        color: #e8e8e8;
-        border: 1px solid #3a3a3a;
+    .stButton > button {{
+        background-color: #0d0d22;
+        color: #e8e0ff;
+        border: 1px solid #2a2a4a;
         border-radius: 8px;
         font-family: 'JetBrains Mono', monospace;
         font-size: 0.85rem;
         padding: 0.4rem 1.2rem;
         transition: all 0.2s ease;
-    }
-    .stButton > button:hover {
-        border-color: #4ade80;
-        color: #4ade80;
-        background-color: #1a3a2a;
-    }
+    }}
+    .stButton > button:hover {{
+        border-color: #a78bfa;
+        color: #a78bfa;
+        background-color: #1a1a3a;
+    }}
 
-    /* Primary button */
-    .stButton > button[kind="primary"] {
-        background-color: #1a3a2a;
-        border-color: #4ade80;
-        color: #4ade80;
-    }
+    .stButton > button[kind="primary"] {{
+        background-color: #1a1a3a;
+        border-color: #a78bfa;
+        color: #a78bfa;
+    }}
 
-    /* Sidebar nav item style */
-    .nav-item {
-        padding: 0.5rem 0.8rem;
-        border-radius: 8px;
-        margin-bottom: 4px;
-        cursor: pointer;
-        font-size: 0.9rem;
-        color: #aaa;
-        transition: all 0.15s;
-    }
-    .nav-item:hover { background: #1e1e1e; color: #fff; }
-    .nav-item.active { background: #1a3a2a; color: #4ade80; font-weight: 700; }
-
-    /* Metric cards */
-    .metric-row {
+    .metric-row {{
         display: flex;
         gap: 1rem;
         margin-bottom: 1.5rem;
-    }
-    .metric-card {
+    }}
+    .metric-card {{
         flex: 1;
-        background: #141414;
-        border: 1px solid #2a2a2a;
+        background: #0d0d22;
+        border: 1px solid #2a2a4a;
         border-radius: 10px;
         padding: 1rem;
         text-align: center;
-    }
-    .metric-value {
+        transition: all 0.2s ease;
+    }}
+    .metric-card:hover {{
+        border-color: #a78bfa;
+        background: #1a1a3a;
+    }}
+    .metric-value {{
         font-size: 2rem;
         font-weight: 800;
         font-family: 'JetBrains Mono', monospace;
-    }
-    .metric-label {
+    }}
+    .metric-label {{
         font-size: 0.75rem;
-        color: #666;
+        color: #3a3a6a;
         text-transform: uppercase;
         letter-spacing: 1px;
         margin-top: 4px;
-    }
+    }}
 
-    /* Hide streamlit branding */
-    #MainMenu {visibility: hidden;}
-    footer {visibility: hidden;}
-    header {visibility: hidden;}
+    .chivalry {{
+        font-family: 'Playfair Display', serif;
+        font-style: italic;
+        color: #9a90cc;
+    }}
+
+    /* Page transition */
+    @keyframes fadeInPage {{
+        from {{ opacity: 0; transform: translateY(10px); }}
+        to {{ opacity: 1; transform: translateY(0); }}
+    }}
+    .main .block-container {{
+        animation: fadeInPage 0.4s ease forwards;
+    }}
+
+    /* Progress bar */
+    .progress-bar-bg {{
+        background: #1a1a3a;
+        border-radius: 10px;
+        height: 8px;
+        width: 100%;
+        margin: 6px 0;
+    }}
+    .progress-bar-fill {{
+        background: linear-gradient(90deg, #a78bfa, #818cf8);
+        border-radius: 10px;
+        height: 8px;
+        transition: width 0.3s ease;
+    }}
+
+    #MainMenu {{visibility: hidden;}}
+    footer {{visibility: hidden;}}
+    header {{visibility: hidden;}}
 </style>
 """, unsafe_allow_html=True)
 
 # ============================================
-# COLOR LEVEL HELPERS
+# BADGE HELPERS
 # ============================================
 def mood_badge(score: int) -> str:
     if score >= 8:
@@ -201,37 +250,27 @@ def mood_badge(score: int) -> str:
 def clarity_badge(clarity: str) -> str:
     colors = {"sharp": "badge-green", "normal": "badge-blue", "foggy": "badge-orange"}
     icons  = {"sharp": "⚡", "normal": "🔵", "foggy": "🌫️"}
-    c = colors.get(clarity, "badge-grey")
-    i = icons.get(clarity, "●")
-    return f'<span class="badge {c}">{i} {clarity}</span>'
+    return f'<span class="badge {colors.get(clarity,"badge-grey")}">{icons.get(clarity,"●")} {clarity}</span>'
 
 def physical_badge(state: str) -> str:
     colors = {"energized": "badge-green", "neutral": "badge-blue", "tired": "badge-red"}
     icons  = {"energized": "⚡", "neutral": "🔵", "tired": "🔴"}
-    c = colors.get(state, "badge-grey")
-    i = icons.get(state, "●")
-    return f'<span class="badge {c}">{i} {state}</span>'
+    return f'<span class="badge {colors.get(state,"badge-grey")}">{icons.get(state,"●")} {state}</span>'
 
 def mental_badge(state: str) -> str:
     colors = {"calm": "badge-green", "stable": "badge-blue", "stressed": "badge-orange", "heavy": "badge-red"}
     icons  = {"calm": "🟢", "stable": "🔵", "stressed": "🟠", "heavy": "🔴"}
-    c = colors.get(state, "badge-grey")
-    i = icons.get(state, "●")
-    return f'<span class="badge {c}">{i} {state}</span>'
+    return f'<span class="badge {colors.get(state,"badge-grey")}">{icons.get(state,"●")} {state}</span>'
 
 def result_badge(result: str) -> str:
     colors = {"win": "badge-green", "pass": "badge-blue", "fail": "badge-red", "complete": "badge-gold"}
     icons  = {"win": "🏆", "pass": "✅", "fail": "❌", "complete": "⭐"}
-    c = colors.get(result, "badge-grey")
-    i = icons.get(result, "●")
-    return f'<span class="badge {c}">{i} {result.upper()}</span>'
+    return f'<span class="badge {colors.get(result,"badge-grey")}">{icons.get(result,"●")} {result.upper()}</span>'
 
 def goal_status_badge(status: str) -> str:
     colors = {"active": "badge-green", "paused": "badge-grey", "completed": "badge-gold"}
     icons  = {"active": "🟢", "paused": "⏸️", "completed": "⭐"}
-    c = colors.get(status, "badge-grey")
-    i = icons.get(status, "●")
-    return f'<span class="badge {c}">{i} {status.upper()}</span>'
+    return f'<span class="badge {colors.get(status,"badge-grey")}">{icons.get(status,"●")} {status.upper()}</span>'
 
 def significance_badge(score: int) -> str:
     if score >= 5:
@@ -243,11 +282,12 @@ def significance_badge(score: int) -> str:
     else:
         return f'<span class="badge badge-grey">★★☆☆☆ {score}/5</span>'
 
+def skill_level_badge(level: str) -> str:
+    colors = {"beginner": "badge-blue", "intermediate": "badge-yellow", "advanced": "badge-orange", "master": "badge-gold"}
+    return f'<span class="badge {colors.get(level,"badge-grey")}">⚡ {level.upper()}</span>'
+
 # ============================================
-# SIDEBAR NAVIGATION
-# ============================================
-# ============================================
-# TOP NAV BAR (always visible)
+# NAVIGATION
 # ============================================
 nav_options = [
     "🏠  Home",
@@ -258,12 +298,11 @@ nav_options = [
     "💫  Wish List",
     "🎯  Goals",
     "🏆  Outcomes",
+    "🧠  Skills",
     "📜  Archive",
+    "⚙️  Settings",
 ]
 
-# ============================================================
-# NAVIGATION (sidebar only, single source of truth)
-# ============================================================
 if "nav_override_counter" not in st.session_state:
     st.session_state["nav_override_counter"] = 0
 if "current_page_override" not in st.session_state:
@@ -272,14 +311,14 @@ if "current_page_override" not in st.session_state:
 with st.sidebar:
     st.markdown("""
         <div style="padding: 1rem 0 1.5rem 0;">
-            <div style="font-family: 'Syne', sans-serif; font-size: 1.3rem; font-weight: 800; color: #fff;">
+            <div style="font-family: 'Syne', sans-serif; font-size: 1.3rem; font-weight: 800; color: #e8e0ff;">
                 🗂️ Life Archive
             </div>
-            <div style="font-family: 'JetBrains Mono', monospace; font-size: 0.7rem; color: #444; margin-top: 4px;">
+            <div style="font-family: 'JetBrains Mono', monospace; font-size: 0.7rem; color: #3a3a6a; margin-top: 4px;">
                 personal memory system
             </div>
         </div>
-        <hr style="border-color: #2a2a2a; margin-bottom: 1rem;">
+        <hr style="border-color: #2a2a4a; margin-bottom: 1rem;">
     """, unsafe_allow_html=True)
 
     if st.session_state.get("current_page_override"):
@@ -298,19 +337,20 @@ with st.sidebar:
     )
 
     st.markdown("""
-        <hr style="border-color: #2a2a2a; margin-top: 1rem;">
-        <div style="font-family: 'JetBrains Mono', monospace; font-size: 0.65rem; color: #333; padding: 0.5rem 0;">
-            v1.0 · built for long-term self-awareness
+        <hr style="border-color: #2a2a4a; margin-top: 1rem;">
+        <div style="font-family: 'JetBrains Mono', monospace; font-size: 0.65rem; color: #2a2a4a; padding: 0.5rem 0;">
+            v2.0 · soft noir · built for self-awareness
         </div>
     """, unsafe_allow_html=True)
+
+
 # ============================================
 # HOME PAGE
 # ============================================
 if page == "🏠  Home":
-    st.markdown('<div class="section-header" style="font-size:2.2rem;">Welcome back, Captain 🫡</div>', unsafe_allow_html=True)
+    st.markdown("<h1 style='font-family:Syne,sans-serif;font-size:2.2rem;font-weight:800;color:#e8e0ff;'>Welcome back, Captain 🫡</h1>", unsafe_allow_html=True)
     st.markdown(f'<div class="section-sub">Today is {date.today().strftime("%A, %B %d %Y")} · Your archive is running.</div>', unsafe_allow_html=True)
 
-    # Quick stats
     try:
         total_logs     = supabase.table("daily_logs").select("id", count="exact").execute().count or 0
         total_goals    = supabase.table("goals").select("id", count="exact").execute().count or 0
@@ -327,19 +367,19 @@ if page == "🏠  Home":
             st.session_state["nav_override_counter"] = st.session_state.get("nav_override_counter", 0) + 1
             st.rerun()
     with col2:
-        st.markdown(f'''<div class="metric-card"><div class="metric-value" style="color:#60a5fa">{total_goals}</div><div class="metric-label">Active Goals</div></div>''', unsafe_allow_html=True)
+        st.markdown(f'''<div class="metric-card"><div class="metric-value" style="color:#a78bfa">{total_goals}</div><div class="metric-label">Active Goals</div></div>''', unsafe_allow_html=True)
         if st.button("→ Goals", key="home_goals", use_container_width=True):
             st.session_state["current_page_override"] = "🎯  Goals"
             st.session_state["nav_override_counter"] = st.session_state.get("nav_override_counter", 0) + 1
             st.rerun()
     with col3:
-        st.markdown(f'''<div class="metric-card"><div class="metric-value" style="color:#facc15">{total_wishes}</div><div class="metric-label">Wishes</div></div>''', unsafe_allow_html=True)
+        st.markdown(f'''<div class="metric-card"><div class="metric-value" style="color:#c084fc">{total_wishes}</div><div class="metric-label">Wishes</div></div>''', unsafe_allow_html=True)
         if st.button("→ Wish List", key="home_wishes", use_container_width=True):
             st.session_state["current_page_override"] = "💫  Wish List"
             st.session_state["nav_override_counter"] = st.session_state.get("nav_override_counter", 0) + 1
             st.rerun()
     with col4:
-        st.markdown(f'''<div class="metric-card"><div class="metric-value" style="color:#fb923c">{total_outcomes}</div><div class="metric-label">Outcomes</div></div>''', unsafe_allow_html=True)
+        st.markdown(f'''<div class="metric-card"><div class="metric-value" style="color:#818cf8">{total_outcomes}</div><div class="metric-label">Outcomes</div></div>''', unsafe_allow_html=True)
         if st.button("→ Outcomes", key="home_outcomes", use_container_width=True):
             st.session_state["current_page_override"] = "🏆  Outcomes"
             st.session_state["nav_override_counter"] = st.session_state.get("nav_override_counter", 0) + 1
@@ -349,7 +389,7 @@ if page == "🏠  Home":
 
     st.markdown("""
     <div class="card">
-        <div style="font-size:0.75rem; color:#666; font-family:'JetBrains Mono',monospace; margin-bottom:0.6rem; letter-spacing:1px;">WHAT THIS IS</div>
+        <div style="font-size:0.75rem; color:#3a3a6a; font-family:'JetBrains Mono',monospace; margin-bottom:0.6rem; letter-spacing:1px;">WHAT THIS IS</div>
         <div class="chivalry" style="font-size:1.05rem; line-height:1.9;">
             This is your private life archive. Not a productivity tool. Not a habit tracker.<br>
             <em>A structured memory of who you are, what you tried, and what actually happened.</em><br><br>
@@ -360,20 +400,18 @@ if page == "🏠  Home":
 
     st.markdown("""
     <div class="card">
-        <div style="font-size:0.75rem; color:#666; font-family:'JetBrains Mono',monospace; margin-bottom:0.8rem; letter-spacing:1px;">QUICK START</div>
+        <div style="font-size:0.75rem; color:#3a3a6a; font-family:'JetBrains Mono',monospace; margin-bottom:0.8rem; letter-spacing:1px;">QUICK START</div>
         <div class="chivalry" style="font-size:1rem; line-height:2.2;">
             📝 &nbsp;<b>Daily Log</b> — start here every day<br>
             💫 &nbsp;<b>Wish List</b> — add anything you want to pursue<br>
             🎯 &nbsp;<b>Goals</b> — activate a wish and start tracking<br>
             🏆 &nbsp;<b>Outcomes</b> — record what happened when it ended<br>
+            🧠 &nbsp;<b>Skills</b> — track mastery hour by hour<br>
             📜 &nbsp;<b>Archive</b> — browse your full history
         </div>
     </div>
     """, unsafe_allow_html=True)
 
-# ============================================
-# PLACEHOLDER PAGES (to be built in next parts)
-# ============================================
 elif page == "📝  Daily Log":
     st.markdown('<div class="section-header">📝 Daily Log</div>', unsafe_allow_html=True)
     today = date.today()
@@ -1752,3 +1790,236 @@ elif page == "📜  Archive":
             </div>
         </div>
         """, unsafe_allow_html=True)
+
+# ============================================
+# SKILLS PAGE
+# ============================================
+elif page == "🧠  Skills":
+    st.markdown('<div class="section-header">🧠 Skills</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-sub">track mastery · hour by hour</div>', unsafe_allow_html=True)
+
+    if "skill_view" not in st.session_state:
+        st.session_state["skill_view"] = "📊 Active Skills"
+    if "editing_skill" not in st.session_state:
+        st.session_state["editing_skill"] = None
+    if "skill_radio_counter" not in st.session_state:
+        st.session_state["skill_radio_counter"] = 0
+
+    options = ["📊 Active Skills", "➕ Add Skill"]
+    current_index = options.index(st.session_state["skill_view"])
+    view = st.radio("Skill View", options, index=current_index,
+                    horizontal=True, label_visibility="collapsed",
+                    key=f"skill_radio_{st.session_state['skill_radio_counter']}")
+    st.markdown('<hr class="divider">', unsafe_allow_html=True)
+
+    # ── ACTIVE SKILLS ──
+    if view == "📊 Active Skills":
+        try:
+            skills = supabase.table("skills").select("*").order("created_at", desc=False).execute().data or []
+        except:
+            skills = []
+
+        if not skills:
+            st.info("No skills yet. Add your first skill to start tracking mastery.")
+        else:
+            for sk in skills:
+                try:
+                    sessions = supabase.table("skill_sessions").select("*").eq("skill_id", sk["id"]).order("session_date", desc=False).execute().data or []
+                except:
+                    sessions = []
+
+                total_hours = sum(s.get("duration_hours", 0) or 0 for s in sessions)
+                target_hours = sk.get("target_hours", 100) or 100
+                progress_pct = min(int((total_hours / target_hours) * 100), 100)
+                last_date = sessions[-1]["session_date"] if sessions else None
+
+                from datetime import datetime, timedelta
+                inactive_badge = ""
+                if last_date:
+                    days_since = (date.today() - datetime.strptime(last_date, "%Y-%m-%d").date()).days
+                    if days_since >= 5:
+                        inactive_badge = f'<span class="badge badge-red">🔴 {days_since}d inactive</span>'
+
+                progress_color = "#a78bfa" if progress_pct < 50 else "#818cf8" if progress_pct < 80 else "#4ade80"
+
+                st.markdown(f"""
+                <div class="card">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;">
+                        <span style="font-size:1.1rem;font-weight:800;color:#e8e0ff;">{sk['skill_name']}</span>
+                        <div style="display:flex;gap:0.5rem;align-items:center;">
+                            {skill_level_badge(sk.get('target_level','beginner'))}
+                            {inactive_badge}
+                        </div>
+                    </div>
+                    <div style="font-size:0.8rem;color:#3a3a6a;font-family:'JetBrains Mono',monospace;margin-bottom:0.6rem;">
+                        {sk.get('category','')} · {total_hours:.1f} / {target_hours} hrs · {len(sessions)} sessions
+                    </div>
+                    <div class="progress-bar-bg">
+                        <div class="progress-bar-fill" style="width:{progress_pct}%;background:{progress_color};"></div>
+                    </div>
+                    <div style="font-size:0.75rem;color:#3a3a6a;font-family:'JetBrains Mono',monospace;margin-top:3px;">{progress_pct}% to {sk.get('target_level','goal')}</div>
+                </div>
+                """, unsafe_allow_html=True)
+
+                if sessions:
+                    with st.expander(f"🗂 {len(sessions)} past sessions"):
+                        for s in reversed(sessions):
+                            stars = '★' * (s.get('difficulty',0) or 0) + '☆' * (5 - (s.get('difficulty',0) or 0))
+                            st.markdown(f"""
+                            <div class="card" style="margin-bottom:0.4rem;">
+                                <div style="display:flex;justify-content:space-between;">
+                                    <span style="font-family:'JetBrains Mono',monospace;font-size:0.8rem;color:#3a3a6a;">{s['session_date']}</span>
+                                    <span class="badge badge-purple">{s.get('duration_hours',0)}h</span>
+                                    <span class="badge badge-yellow">{stars}</span>
+                                </div>
+                                <div style="margin-top:0.4rem;color:#e8e0ff;font-size:0.85rem;"><b>{s.get('what_practiced','')}</b></div>
+                                <div style="margin-top:0.2rem;color:#6a6a9a;font-size:0.85rem;">💡 {s.get('learning_note','')}</div>
+                            </div>
+                            """, unsafe_allow_html=True)
+
+                with st.expander(f"➕ Log a session for '{sk['skill_name']}'"):
+                    s_date     = st.date_input("Date", value=date.today(), key=f"sk_date_{sk['id']}")
+                    s_dur      = st.number_input("Duration (hours)", min_value=0.0, step=0.25, value=1.0, key=f"sk_dur_{sk['id']}")
+                    s_what     = st.text_input("What did you practice?", key=f"sk_what_{sk['id']}", placeholder="e.g. Hiragana drills, jab-cross combos, recursion problems...")
+                    s_note     = st.text_area("What clicked / what you learned", key=f"sk_note_{sk['id']}", height=70)
+                    s_diff     = st.slider("Difficulty (1–5)", 1, 5, 3, key=f"sk_diff_{sk['id']}")
+                    s_enjoy    = st.slider("Enjoyment (1–5)", 1, 5, 3, key=f"sk_enjoy_{sk['id']}")
+
+                    if st.button("💾 Save Session", key=f"sk_save_{sk['id']}", type="primary"):
+                        try:
+                            supabase.table("skill_sessions").insert({
+                                "skill_id": sk["id"],
+                                "session_date": str(s_date),
+                                "duration_hours": s_dur,
+                                "what_practiced": s_what.strip(),
+                                "learning_note": s_note.strip(),
+                                "difficulty": s_diff,
+                                "enjoyment": s_enjoy
+                            }).execute()
+                            st.success("✅ Session logged.")
+                            st.rerun()
+                        except Exception as ex:
+                            st.error(f"Error: {ex}")
+
+                col_edit, col_del = st.columns([1, 1])
+                with col_edit:
+                    if st.button("✏️ Edit", key=f"edit_skill_{sk['id']}"):
+                        st.session_state["editing_skill"] = dict(sk)
+                        st.session_state["skill_view"] = "➕ Add Skill"
+                        st.session_state["skill_radio_counter"] += 1
+                        st.rerun()
+                with col_del:
+                    if st.button("🗑️ Delete", key=f"del_skill_{sk['id']}"):
+                        st.session_state[f"confirm_del_sk_{sk['id']}"] = True
+                        st.rerun()
+                if st.session_state.get(f"confirm_del_sk_{sk['id']}", False):
+                    st.warning(f"Delete **{sk['skill_name']}**? All sessions will be lost.")
+                    c1, c2 = st.columns(2)
+                    with c1:
+                        if st.button("Yes, delete", key=f"yes_del_sk_{sk['id']}"):
+                            supabase.table("skill_sessions").delete().eq("skill_id", sk["id"]).execute()
+                            supabase.table("skills").delete().eq("id", sk["id"]).execute()
+                            st.session_state[f"confirm_del_sk_{sk['id']}"] = False
+                            st.rerun()
+                    with c2:
+                        if st.button("Cancel", key=f"cancel_del_sk_{sk['id']}"):
+                            st.session_state[f"confirm_del_sk_{sk['id']}"] = False
+                            st.rerun()
+
+                st.markdown('<hr class="divider">', unsafe_allow_html=True)
+
+    # ── ADD / EDIT SKILL ──
+    else:
+        editing_sk = st.session_state.get("editing_skill", None)
+        editing_sk_id = editing_sk["id"] if editing_sk else None
+        st.markdown(f"#### {'✏️ Editing Skill' if editing_sk else 'What do you want to master?'}")
+
+        with st.form("skill_form"):
+            sk_name  = st.text_input("Skill Name", value=editing_sk["skill_name"] if editing_sk else "", placeholder="e.g. Japanese, Boxing, Python, Guitar...")
+            cats     = ["language", "sport", "tech", "art", "music", "other"]
+            sk_cat   = st.selectbox("Category", cats, index=cats.index(editing_sk["category"]) if editing_sk and editing_sk.get("category") in cats else 0)
+            levels   = ["beginner", "intermediate", "advanced", "master"]
+            sk_level = st.selectbox("Target Level", levels, index=levels.index(editing_sk["target_level"]) if editing_sk and editing_sk.get("target_level") in levels else 0)
+            sk_hours = st.number_input("Target Hours to reach that level", min_value=1, step=10, value=int(editing_sk.get("target_hours", 100)) if editing_sk else 100)
+            sk_why   = st.text_area("Why do you want this skill?", value=editing_sk.get("motivation","") if editing_sk else "", height=80, placeholder="What drives you to learn this?")
+            submitted = st.form_submit_button("💾 Update Skill" if editing_sk else "💾 Add Skill")
+
+        if submitted:
+            if not sk_name.strip():
+                st.error("Please enter a skill name.")
+            else:
+                try:
+                    record = {
+                        "skill_name": sk_name.strip(),
+                        "category": sk_cat,
+                        "target_level": sk_level,
+                        "target_hours": sk_hours,
+                        "motivation": sk_why.strip(),
+                    }
+                    if editing_sk_id:
+                        supabase.table("skills").update(record).eq("id", editing_sk_id).execute()
+                        st.success("✅ Skill updated.")
+                        st.session_state["editing_skill"] = None
+                    else:
+                        record["date_started"] = str(date.today())
+                        supabase.table("skills").insert(record).execute()
+                        st.success(f"✅ '{sk_name}' added. Start logging sessions!")
+                    st.session_state["skill_view"] = "📊 Active Skills"
+                    st.session_state["skill_radio_counter"] += 1
+                    st.rerun()
+                except Exception as ex:
+                    st.error(f"Error: {ex}")
+
+        if editing_sk_id and st.button("Cancel", key="cancel_skill_form"):
+            st.session_state["editing_skill"] = None
+            st.session_state["skill_view"] = "📊 Active Skills"
+            st.session_state["skill_radio_counter"] += 1
+            st.rerun()
+
+# ============================================
+# SETTINGS PAGE
+# ============================================
+elif page == "⚙️  Settings":
+    st.markdown('<div class="section-header">⚙️ Settings</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-sub">wallpaper · display · preferences</div>', unsafe_allow_html=True)
+
+    st.markdown("#### 🖼 Wallpaper")
+
+    current_wp = get_wallpaper()
+    if current_wp:
+        st.markdown('<span class="badge badge-green">✅ Wallpaper active</span>', unsafe_allow_html=True)
+        st.markdown("<br>", unsafe_allow_html=True)
+
+    uploaded = st.file_uploader("Upload a wallpaper image", type=["jpg", "jpeg", "png", "webp"], label_visibility="collapsed")
+
+    current_opacity = get_overlay_opacity()
+    opacity = st.slider("Overlay darkness (how much to dim the wallpaper)", 0.2, 0.9, current_opacity, step=0.05)
+
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("💾 Save Wallpaper", type="primary"):
+            try:
+                if uploaded:
+                    img_bytes = uploaded.read()
+                    b64 = base64.b64encode(img_bytes).decode("utf-8")
+                    supabase.table("settings").upsert({"key": "wallpaper_b64", "value": b64}).execute()
+                supabase.table("settings").upsert({"key": "overlay_opacity", "value": str(opacity)}).execute()
+                st.success("✅ Settings saved. Refresh the page to see your wallpaper.")
+                st.rerun()
+            except Exception as ex:
+                st.error(f"Error: {ex}")
+    with col2:
+        if current_wp and st.button("🗑️ Remove Wallpaper"):
+            try:
+                supabase.table("settings").delete().eq("key", "wallpaper_b64").execute()
+                st.success("✅ Wallpaper removed.")
+                st.rerun()
+            except Exception as ex:
+                st.error(f"Error: {ex}")
+
+    if current_wp:
+        st.markdown('<hr class="divider">', unsafe_allow_html=True)
+        st.markdown("**Current wallpaper preview:**")
+        import base64 as b64mod
+        st.markdown(f'<img src="data:image/jpeg;base64,{current_wp[:100]}..." style="display:none">', unsafe_allow_html=True)
+        st.markdown(f'<div style="width:100%;height:120px;background-image:url(\'data:image/jpeg;base64,{current_wp}\');background-size:cover;background-position:center;border-radius:8px;border:1px solid #2a2a4a;"></div>', unsafe_allow_html=True)
