@@ -187,25 +187,6 @@ st.markdown("""
     footer {visibility: hidden;}
     header {visibility: hidden;}
 </style>
-header {visibility: hidden;}
-</style>
-""", unsafe_allow_html=True)
-
-st.markdown("""
-<style>
-    .stApp { background: transparent; }
-</style>
-...
-""", unsafe_allow_html=True)
-st.markdown("""
-<style>
-    .stApp { background: transparent; }
-</style>
-<div id="video-background">
-    <video autoplay muted loop playsinline style="position:fixed;top:0;left:0;width:100%;height:100%;object-fit:cover;z-index:-1;opacity:0.4;">
-        <source src="https://drive.google.com/uc?export=download&id=1dJTb_TxWCBg94-RM5snBq_cuDjZgpu4e" type="video/mp4">
-    </video>
-</div>
 """, unsafe_allow_html=True)
 
 # ============================================
