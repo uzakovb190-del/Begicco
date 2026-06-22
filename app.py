@@ -229,7 +229,17 @@ st.markdown(f"""
         height: 8px;
         transition: width 0.3s ease;
     }}
-
+/* Force sidebar toggle visible */
+    [data-testid="stSidebarCollapseButton"] {
+        background-color: #1a1a3a !important;
+        border: 1px solid #a78bfa !important;
+        border-radius: 8px !important;
+        opacity: 1 !important;
+        visibility: visible !important;
+    }
+    [data-testid="stSidebarCollapseButton"] svg {
+        fill: #a78bfa !important;
+    }
     #MainMenu {{visibility: hidden;}}
     footer {{visibility: hidden;}}
     header {{visibility: hidden;}}
