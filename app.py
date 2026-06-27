@@ -11,16 +11,38 @@ import mimetypes
 # Credentials are read from Streamlit secrets, NOT hardcoded.
 # - Local dev:  put them in  .streamlit/secrets.toml  (git-ignored)
 # - Deployed:   Streamlit Cloud → your app → Settings → Secrets
+_secrets_found = True
+_available_keys = []
 try:
-    SUPABASE_URL = st.secrets["SUPABASE_URL"]
-    SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
-except (KeyError, FileNotFoundError):
+    _available_keys = list(st.secrets.keys())
+except Exception:
+    _secrets_found = False
+
+if not _secrets_found:
     st.error(
-        "Supabase credentials are missing. Add SUPABASE_URL and SUPABASE_KEY to "
-        "your Streamlit secrets (locally: .streamlit/secrets.toml — on Streamlit "
-        "Cloud: app → Settings → Secrets)."
+        "No Streamlit secrets were found at all.\n\n"
+        "• Locally: the file must be at  .streamlit/secrets.toml  in the SAME folder "
+        "you run `streamlit run app.py` from (not inside another subfolder), and named "
+        "exactly secrets.toml (not secrets.toml.txt).\n"
+        "• On Streamlit Cloud: open your app → Settings → Secrets, paste the values, Save, "
+        "and let it reboot."
     )
     st.stop()
+
+_missing = [k for k in ("SUPABASE_URL", "SUPABASE_KEY") if k not in st.secrets]
+if _missing:
+    st.error(
+        f"Secrets were found, but these required keys are missing: {_missing}\n\n"
+        f"Keys I can actually see right now: {_available_keys}\n\n"
+        "Fix: in your secrets, the lines must be exactly (note the spelling/caps, with quotes, "
+        "and NOT under any [section] header):\n"
+        'SUPABASE_URL = "https://...supabase.co"\n'
+        'SUPABASE_KEY = "eyJ..."'
+    )
+    st.stop()
+
+SUPABASE_URL = st.secrets["SUPABASE_URL"]
+SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
 
 # ---------------------------------------------------------------------------
 # OPTIONAL LOCAL BACKGROUND IMAGE
