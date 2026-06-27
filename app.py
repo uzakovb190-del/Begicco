@@ -29,7 +29,7 @@ st.set_page_config(
     page_title="Life Archive",
     page_icon="🗂️",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="collapsed"
 )
 
 # ============================================
@@ -254,20 +254,36 @@ st.markdown(f"""
         height: 8px;
         transition: width 0.3s ease;
     }}
-    /* Force sidebar toggle visible */
-    [data-testid="stSidebarCollapseButton"] {{
+    /* Sidebar toggle buttons — keep BOTH the collapse button (sidebar OPEN)
+       and the expand button (sidebar COLLAPSED) visible and styled.
+       NOTE: in Streamlit, the expand button lives INSIDE the toolbar/header,
+       so we must NOT hide stToolbar or the header — only the deploy/menu items. */
+    [data-testid="stSidebarCollapseButton"],
+    [data-testid="stExpandSidebarButton"],
+    [data-testid="collapsedControl"] {{
         background-color: #1a1a3a !important;
         border: 1px solid #a78bfa !important;
         border-radius: 8px !important;
         opacity: 1 !important;
         visibility: visible !important;
     }}
-    [data-testid="stSidebarCollapseButton"] svg {{
+    [data-testid="stSidebarCollapseButton"] svg,
+    [data-testid="stExpandSidebarButton"] svg,
+    [data-testid="collapsedControl"] svg {{
         fill: #a78bfa !important;
     }}
+    /* Keep the header/toolbar present (so the expand button survives), just
+       transparent, and hide only the deploy button / hamburger menu / status. */
+    header[data-testid="stHeader"] {{
+        background: transparent !important;
+    }}
+    [data-testid="stToolbarActions"] {{display: none !important;}}
+    [data-testid="stMainMenu"] {{display: none !important;}}
+    [data-testid="stAppDeployButton"] {{display: none !important;}}
+    [data-testid="stStatusWidget"] {{display: none !important;}}
+    [data-testid="stDecoration"] {{display: none !important;}}
     #MainMenu {{visibility: hidden;}}
     footer {{visibility: hidden;}}
-    header {{visibility: hidden;}}
 </style>
 """, unsafe_allow_html=True)
 
@@ -338,81 +354,39 @@ nav_options = [
     "⚙️  Settings",
 ]
 
-if "nav_override_counter" not in st.session_state:
-    st.session_state["nav_override_counter"] = 0
+# ---- In-page navigation (no sidebar) ----
+if "nav" not in st.session_state:
+    st.session_state["nav"] = "🏠  Home"
 if "current_page_override" not in st.session_state:
     st.session_state["current_page_override"] = None
 
-with st.sidebar:
+# Bridge: existing buttons set "current_page_override" — honor it as a nav change.
+if st.session_state.get("current_page_override"):
+    if st.session_state["current_page_override"] in nav_options:
+        st.session_state["nav"] = st.session_state["current_page_override"]
+    st.session_state["current_page_override"] = None
+
+def go_to(dest):
+    """Navigate to a section (one layer in) or back Home."""
+    st.session_state["nav"] = dest
+    st.rerun()
+
+page = st.session_state["nav"]
+
+# ---- Top bar: brand on the left, a Back-to-Home button on every non-Home page ----
+_tl, _tr = st.columns([4, 1])
+with _tl:
     st.markdown("""
-        <div style="padding: 1rem 0 1.5rem 0;">
-            <div style="font-family: 'Syne', sans-serif; font-size: 1.3rem; font-weight: 800; color: #e8e0ff;">
-                🗂️ Life Archive
-            </div>
-            <div style="font-family: 'JetBrains Mono', monospace; font-size: 0.7rem; color: #3a3a6a; margin-top: 4px;">
-                personal memory system
-            </div>
-        </div>
-        <hr style="border-color: #2a2a4a; margin-bottom: 1rem;">
-    """, unsafe_allow_html=True)
-
-    if st.session_state.get("current_page_override"):
-        default_index = nav_options.index(st.session_state["current_page_override"])
-        st.session_state["current_page_override"] = None
-        st.session_state["nav_override_counter"] += 1
-    else:
-        default_index = 0
-
-    page = st.radio(
-        "Navigation",
-        options=nav_options,
-        index=default_index,
-        label_visibility="collapsed",
-        key=f"sidebar_nav_{st.session_state['nav_override_counter']}"
-    )
-
-    st.markdown("""
-        <hr style="border-color: #2a2a4a; margin-top: 1rem;">
-        <div style="font-family: 'JetBrains Mono', monospace; font-size: 0.65rem; color: #2a2a4a; padding: 0.5rem 0;">
-            v2.0 · soft noir · built for self-awareness
+        <div style="display:flex;align-items:baseline;gap:0.6rem;flex-wrap:wrap;">
+            <span style="font-family:'Syne',sans-serif;font-size:1.15rem;font-weight:800;color:#e8e0ff;">🗂️ Life Archive</span>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:0.65rem;color:#3a3a6a;">personal memory system</span>
         </div>
     """, unsafe_allow_html=True)
-
-
-# ============================================
-# JS SIDEBAR TOGGLE OVERLAY
-# ============================================
-st.markdown("""
-<script>
-    function injectToggle() {
-        const btn = document.querySelector('[data-testid="stSidebarCollapseButton"]');
-        if (btn) {
-            btn.style.cssText = `
-                position: fixed !important;
-                top: 10px !important;
-                left: 10px !important;
-                z-index: 9999999 !important;
-                background: #1a1a3a !important;
-                border: 1px solid #a78bfa !important;
-                border-radius: 8px !important;
-                width: 36px !important;
-                height: 36px !important;
-                display: flex !important;
-                align-items: center !important;
-                justify-content: center !important;
-                opacity: 1 !important;
-                visibility: visible !important;
-                cursor: pointer !important;
-            `;
-            const svg = btn.querySelector('svg');
-            if (svg) svg.style.fill = '#a78bfa';
-        } else {
-            setTimeout(injectToggle, 300);
-        }
-    }
-    setTimeout(injectToggle, 500);
-</script>
-""", unsafe_allow_html=True)
+with _tr:
+    if page != "🏠  Home":
+        if st.button("← Home", key="nav_back_home", use_container_width=True):
+            go_to("🏠  Home")
+st.markdown('<hr class="divider" style="margin-top:0.5rem;">', unsafe_allow_html=True)
 
 # ============================================
 # HOME PAGE
@@ -454,6 +428,18 @@ if page == "🏠  Home":
             st.session_state["current_page_override"] = "🏆  Outcomes"
             st.session_state["nav_override_counter"] = st.session_state.get("nav_override_counter", 0) + 1
             st.rerun()
+
+    # ---- Navigation hub: tap a section to go one layer in ----
+    st.markdown('<div class="section-sub" style="margin-top:1.4rem;letter-spacing:1px;">OPEN A SECTION</div>', unsafe_allow_html=True)
+    _sections = [s for s in nav_options if s != "🏠  Home"]
+    _per_row = 4
+    for _i in range(0, len(_sections), _per_row):
+        _row = _sections[_i:_i + _per_row]
+        _cols = st.columns(_per_row)
+        for _c, _sec in zip(_cols, _row):
+            with _c:
+                if st.button(_sec, key=f"hub_{_sec}", use_container_width=True):
+                    go_to(_sec)
 
     st.markdown('<hr class="divider">', unsafe_allow_html=True)
 
