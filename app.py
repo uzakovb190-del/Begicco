@@ -8,8 +8,19 @@ import mimetypes
 # ============================================
 # CONFIG
 # ============================================
-SUPABASE_URL = "https://gojnzhpapqzodzadetek.supabase.co"
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdvam56aHBhcHF6b2R6YWRldGVrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA5MzU4MTcsImV4cCI6MjA5NjUxMTgxN30.5Y2-MXRBmPt-ps1JZ-52qYi2g9lQOED_Lb69uVAwzxk"
+# Credentials are read from Streamlit secrets, NOT hardcoded.
+# - Local dev:  put them in  .streamlit/secrets.toml  (git-ignored)
+# - Deployed:   Streamlit Cloud → your app → Settings → Secrets
+try:
+    SUPABASE_URL = st.secrets["SUPABASE_URL"]
+    SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
+except (KeyError, FileNotFoundError):
+    st.error(
+        "Supabase credentials are missing. Add SUPABASE_URL and SUPABASE_KEY to "
+        "your Streamlit secrets (locally: .streamlit/secrets.toml — on Streamlit "
+        "Cloud: app → Settings → Secrets)."
+    )
+    st.stop()
 
 # ---------------------------------------------------------------------------
 # OPTIONAL LOCAL BACKGROUND IMAGE
@@ -338,6 +349,36 @@ def skill_level_badge(level: str) -> str:
     return f'<span class="badge {colors.get(level,"badge-grey")}">⚡ {level.upper()}</span>'
 
 # ============================================
+# LOGIN GATE
+# ============================================
+# Set APP_PASSCODE in your Streamlit secrets to require a code before entry.
+# If APP_PASSCODE is not set, the app stays open (so you can never lock yourself
+# out by forgetting to configure it).
+APP_PASSCODE = st.secrets.get("APP_PASSCODE", None)
+
+if APP_PASSCODE and not st.session_state.get("authed", False):
+    st.markdown("<div style='height:8vh'></div>", unsafe_allow_html=True)
+    _lc1, _lc2, _lc3 = st.columns([1, 1.4, 1])
+    with _lc2:
+        st.markdown("""
+        <div class="card" style="text-align:center;">
+            <div style="font-family:'Syne',sans-serif;font-size:1.6rem;font-weight:800;color:#e8e0ff;">🗂️ Life Archive</div>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:0.75rem;color:#3a3a6a;margin-top:6px;">enter your access code to continue</div>
+        </div>
+        """, unsafe_allow_html=True)
+        with st.form("login_form"):
+            _code = st.text_input("Access code", type="password",
+                                  label_visibility="collapsed", placeholder="Access code")
+            _entered = st.form_submit_button("Enter →", use_container_width=True, type="primary")
+        if _entered:
+            if _code == APP_PASSCODE:
+                st.session_state["authed"] = True
+                st.rerun()
+            else:
+                st.error("Incorrect code.")
+    st.stop()
+
+# ============================================
 # NAVIGATION
 # ============================================
 nav_options = [
@@ -403,31 +444,51 @@ if page == "🏠  Home":
     except:
         total_logs = total_goals = total_wishes = total_outcomes = 0
 
+    # Clickable metric cards — the number itself is the button.
+    st.markdown("""
+    <style>
+    .st-key-m_logs button, .st-key-m_goals button,
+    .st-key-m_wishes button, .st-key-m_outcomes button {
+        height: 118px;
+        background: #0d0d22 !important;
+        border: 1px solid #2a2a4a !important;
+        border-radius: 12px !important;
+        transition: all 0.2s ease;
+    }
+    .st-key-m_logs button:hover, .st-key-m_goals button:hover,
+    .st-key-m_wishes button:hover, .st-key-m_outcomes button:hover {
+        border-color: #a78bfa !important;
+        background: #1a1a3a !important;
+    }
+    .st-key-m_logs button p, .st-key-m_goals button p,
+    .st-key-m_wishes button p, .st-key-m_outcomes button p {
+        font-size: 2.4rem !important;
+        font-weight: 800 !important;
+        font-family: 'JetBrains Mono', monospace !important;
+    }
+    .st-key-m_logs button p, .st-key-m_logs button { color: #4ade80 !important; }
+    .st-key-m_goals button p, .st-key-m_goals button { color: #a78bfa !important; }
+    .st-key-m_wishes button p, .st-key-m_wishes button { color: #c084fc !important; }
+    .st-key-m_outcomes button p, .st-key-m_outcomes button { color: #818cf8 !important; }
+    </style>
+    """, unsafe_allow_html=True)
+
+    def metric_link(col, value, label, key, dest, sub=None):
+        with col:
+            if st.button(str(value), key=key, use_container_width=True):
+                if sub:
+                    st.session_state["archive_view"] = sub
+                go_to(dest)
+            st.markdown(
+                f'<div class="metric-label" style="text-align:center;margin-top:-6px;">{label}</div>',
+                unsafe_allow_html=True,
+            )
+
     col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        st.markdown(f'''<div class="metric-card"><div class="metric-value" style="color:#4ade80">{total_logs}</div><div class="metric-label">Days Logged</div></div>''', unsafe_allow_html=True)
-        if st.button("→ Daily Log", key="home_dailylog", use_container_width=True):
-            st.session_state["current_page_override"] = "📝  Daily Log"
-            st.session_state["nav_override_counter"] = st.session_state.get("nav_override_counter", 0) + 1
-            st.rerun()
-    with col2:
-        st.markdown(f'''<div class="metric-card"><div class="metric-value" style="color:#a78bfa">{total_goals}</div><div class="metric-label">Active Goals</div></div>''', unsafe_allow_html=True)
-        if st.button("→ Goals", key="home_goals", use_container_width=True):
-            st.session_state["current_page_override"] = "🎯  Goals"
-            st.session_state["nav_override_counter"] = st.session_state.get("nav_override_counter", 0) + 1
-            st.rerun()
-    with col3:
-        st.markdown(f'''<div class="metric-card"><div class="metric-value" style="color:#c084fc">{total_wishes}</div><div class="metric-label">Wishes</div></div>''', unsafe_allow_html=True)
-        if st.button("→ Wish List", key="home_wishes", use_container_width=True):
-            st.session_state["current_page_override"] = "💫  Wish List"
-            st.session_state["nav_override_counter"] = st.session_state.get("nav_override_counter", 0) + 1
-            st.rerun()
-    with col4:
-        st.markdown(f'''<div class="metric-card"><div class="metric-value" style="color:#818cf8">{total_outcomes}</div><div class="metric-label">Outcomes</div></div>''', unsafe_allow_html=True)
-        if st.button("→ Outcomes", key="home_outcomes", use_container_width=True):
-            st.session_state["current_page_override"] = "🏆  Outcomes"
-            st.session_state["nav_override_counter"] = st.session_state.get("nav_override_counter", 0) + 1
-            st.rerun()
+    metric_link(col1, total_logs,     "Days Logged",  "m_logs",     "📜  Archive", sub="📅 Daily Log History")
+    metric_link(col2, total_goals,    "Active Goals", "m_goals",    "🎯  Goals")
+    metric_link(col3, total_wishes,   "Wishes",       "m_wishes",   "💫  Wish List")
+    metric_link(col4, total_outcomes, "Outcomes",     "m_outcomes", "🏆  Outcomes")
 
     # ---- Navigation hub: tap a section to go one layer in ----
     st.markdown('<div class="section-sub" style="margin-top:1.4rem;letter-spacing:1px;">OPEN A SECTION</div>', unsafe_allow_html=True)
@@ -1648,8 +1709,14 @@ elif page == "📜  Archive":
     st.markdown('<div class="section-header">📜 Archive</div>', unsafe_allow_html=True)
     st.markdown('<div class="section-sub">your life, browsable</div>', unsafe_allow_html=True)
 
-    archive_view = st.radio("Archive View", ["🏆 Win/Failure Archive", "📅 Daily Log History", "📊 Quick Stats"],
-                            horizontal=True, label_visibility="collapsed")
+    _arch_opts = ["🏆 Win/Failure Archive", "📅 Daily Log History", "📊 Quick Stats"]
+    if "archive_view" not in st.session_state or st.session_state["archive_view"] not in _arch_opts:
+        st.session_state["archive_view"] = "🏆 Win/Failure Archive"
+    _arch_index = _arch_opts.index(st.session_state["archive_view"])
+    archive_view = st.radio("Archive View", _arch_opts, index=_arch_index,
+                            horizontal=True, label_visibility="collapsed",
+                            key=f"archive_radio_{_arch_index}")
+    st.session_state["archive_view"] = archive_view
     st.markdown('<hr class="divider">', unsafe_allow_html=True)
 
     # ============================================================
