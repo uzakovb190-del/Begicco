@@ -2,12 +2,22 @@ import streamlit as st
 from supabase import create_client, Client
 from datetime import date
 import base64
+import os
+import mimetypes
 
 # ============================================
 # CONFIG
 # ============================================
 SUPABASE_URL = "https://gojnzhpapqzodzadetek.supabase.co"
 SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdvam56aHBhcHF6b2R6YWRldGVrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA5MzU4MTcsImV4cCI6MjA5NjUxMTgxN30.5Y2-MXRBmPt-ps1JZ-52qYi2g9lQOED_Lb69uVAwzxk"
+
+# ---------------------------------------------------------------------------
+# OPTIONAL LOCAL BACKGROUND IMAGE
+# To add a background: drop an image file in your repo (e.g. create an
+# "assets" folder and put "background.jpg" inside it), then set the path here.
+# Leave it as None to keep using the wallpaper uploaded from the Settings page.
+# ---------------------------------------------------------------------------
+LOCAL_WALLPAPER_PATH = None  # e.g. "assets/background.jpg"
 
 @st.cache_resource
 def init_supabase() -> Client:
@@ -43,7 +53,22 @@ def get_overlay_opacity():
         pass
     return 0.6
 
-wallpaper_b64 = get_wallpaper()
+def _local_wallpaper():
+    """Return (mime, base64) for the local wallpaper file, or (None, None)."""
+    if LOCAL_WALLPAPER_PATH and os.path.exists(LOCAL_WALLPAPER_PATH):
+        try:
+            with open(LOCAL_WALLPAPER_PATH, "rb") as f:
+                data = f.read()
+            mime = mimetypes.guess_type(LOCAL_WALLPAPER_PATH)[0] or "image/jpeg"
+            return mime, base64.b64encode(data).decode("utf-8")
+        except Exception:
+            return None, None
+    return None, None
+
+wallpaper_mime, wallpaper_b64 = _local_wallpaper()
+if not wallpaper_b64:
+    wallpaper_b64 = get_wallpaper()
+    wallpaper_mime = "image/jpeg"
 overlay_opacity = get_overlay_opacity()
 
 # ============================================
@@ -53,7 +78,7 @@ wallpaper_css = ""
 if wallpaper_b64:
     wallpaper_css = f"""
     .stApp {{
-        background-image: url("data:image/jpeg;base64,{wallpaper_b64}");
+        background-image: url("data:{wallpaper_mime};base64,{wallpaper_b64}");
         background-size: cover;
         background-position: center;
         background-attachment: fixed;
@@ -230,19 +255,19 @@ st.markdown(f"""
         transition: width 0.3s ease;
     }}
     /* Force sidebar toggle visible */
-    [data-testid="stSidebarCollapseButton"] {
+    [data-testid="stSidebarCollapseButton"] {{
         background-color: #1a1a3a !important;
         border: 1px solid #a78bfa !important;
         border-radius: 8px !important;
         opacity: 1 !important;
         visibility: visible !important;
-    }
-    [data-testid="stSidebarCollapseButton"] svg {
+    }}
+    [data-testid="stSidebarCollapseButton"] svg {{
         fill: #a78bfa !important;
-    }
-    #MainMenu {visibility: hidden;}
-    footer {visibility: hidden;}
-    header {visibility: hidden;}
+    }}
+    #MainMenu {{visibility: hidden;}}
+    footer {{visibility: hidden;}}
+    header {{visibility: hidden;}}
 </style>
 """, unsafe_allow_html=True)
 
@@ -561,7 +586,7 @@ elif page == "📝  Daily Log":
         col1, col2 = st.columns(2)
         with col1:
             clarity_options = ["foggy", "normal", "sharp"]
-            clarity_default = clarity_options.index(e.get('mental_clarity', 'normal'))
+            clarity_default = clarity_options.index(e.get('mental_clarity') if e.get('mental_clarity') in clarity_options else 'normal')
             mental_clarity = st.selectbox("Mental Clarity", clarity_options, index=clarity_default)
         with col2:
             st.markdown(f"<br>{clarity_badge(mental_clarity)}", unsafe_allow_html=True)
@@ -613,12 +638,12 @@ elif page == "📝  Daily Log":
         col1, col2 = st.columns(2)
         with col1:
             phys_options = ["tired", "neutral", "energized"]
-            phys_default = phys_options.index(e.get('physical_state', 'neutral'))
+            phys_default = phys_options.index(e.get('physical_state') if e.get('physical_state') in phys_options else 'neutral')
             physical_state = st.selectbox("Physical State", phys_options, index=phys_default)
             st.markdown(physical_badge(physical_state), unsafe_allow_html=True)
         with col2:
             ment_options = ["calm", "stable", "stressed", "heavy"]
-            ment_default = ment_options.index(e.get('mental_state', 'stable'))
+            ment_default = ment_options.index(e.get('mental_state') if e.get('mental_state') in ment_options else 'stable')
             mental_state = st.selectbox("Mental State", ment_options, index=ment_default)
             st.markdown(mental_badge(mental_state), unsafe_allow_html=True)
 
@@ -847,7 +872,8 @@ elif page == "📖  Reading Log":
         else:
             for book in finished_books:
                 rec_badge = '<span class="badge badge-green">👍 Recommended</span>' if book.get("recommend") else '<span class="badge badge-grey">👎 Not Recommended</span>'
-                rating = book.get("overall_rating", "—")
+                rating = book.get("overall_rating")
+                rating = rating if isinstance(rating, (int, float)) else "—"
                 rating_color = "#4ade80" if (rating != "—" and rating >= 8) else "#facc15" if (rating != "—" and rating >= 5) else "#f87171"
 
                 st.markdown(f"""
@@ -902,9 +928,11 @@ elif page == "🚨  Life Event":
     if "life_event_view" not in st.session_state:
         st.session_state["life_event_view"] = "➕ Log New Event"
 
-    view = st.radio("", ["📋 Past Events", "➕ Log New Event"],
-                    index=0 if st.session_state["life_event_view"] == "📋 Past Events" else 1,
-                    horizontal=True, label_visibility="collapsed")
+    le_options = ["📋 Past Events", "➕ Log New Event"]
+    le_index = le_options.index(st.session_state["life_event_view"]) if st.session_state["life_event_view"] in le_options else 0
+    view = st.radio("Life Event View", le_options, index=le_index,
+                    horizontal=True, label_visibility="collapsed",
+                    key=f"life_event_radio_{le_index}")
     st.session_state["life_event_view"] = view
     st.markdown('<hr class="divider">', unsafe_allow_html=True)
 
@@ -992,13 +1020,13 @@ elif page == "🚨  Life Event":
 
         e_types_list = ["personal event", "realization", "accident", "movie", "other"]
         e_title  = st.text_input("Event Title", value=editing["event_title"] if editing else "", placeholder="e.g. Got accepted...")
-        e_type   = st.selectbox("Event Type", e_types_list, index=e_types_list.index(editing["event_type"]) if editing else 0)
+        e_type   = st.selectbox("Event Type", e_types_list, index=e_types_list.index(editing["event_type"]) if editing and editing.get("event_type") in e_types_list else 0)
         e_desc   = st.text_area("Description", value=editing.get("event_description","") if editing else "", height=100)
         e_impact = st.text_area("Emotional Impact", value=editing.get("emotional_impact","") if editing else "", height=80)
 
         col1, col2 = st.columns(2)
         with col1:
-            e_sig = st.slider("Significance (1–5)", 1, 5, editing["significance_score"] if editing else 3)
+            e_sig = st.slider("Significance (1–5)", 1, 5, min(5, max(1, editing["significance_score"])) if editing and editing.get("significance_score") else 3)
             st.markdown(significance_badge(e_sig), unsafe_allow_html=True)
         with col2:
             from datetime import datetime
@@ -1043,9 +1071,11 @@ elif page == "🛍️  Purchase Tracker":
     if "editing_purchase" not in st.session_state:
         st.session_state["editing_purchase"] = None
 
-    view = st.radio("Purchase View", ["🔴 Pending Review", "📋 All Purchases", "➕ Add Purchase"],
-                    index=["🔴 Pending Review", "📋 All Purchases", "➕ Add Purchase"].index(st.session_state["purchase_view"]),
-                    horizontal=True, label_visibility="collapsed")
+    p_options = ["🔴 Pending Review", "📋 All Purchases", "➕ Add Purchase"]
+    p_index = p_options.index(st.session_state["purchase_view"]) if st.session_state["purchase_view"] in p_options else 0
+    view = st.radio("Purchase View", p_options, index=p_index,
+                    horizontal=True, label_visibility="collapsed",
+                    key=f"purchase_radio_{p_index}")
     st.session_state["purchase_view"] = view
     st.markdown('<hr class="divider">', unsafe_allow_html=True)
 
