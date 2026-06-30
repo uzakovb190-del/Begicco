@@ -543,7 +543,24 @@ if page == "🏠  Home":
         st.text_area("Copy and send to Telegram or your channel",
                      value=snapshot_text, height=200, key="home_share_box")
         tg_snap_url = f"https://t.me/share/url?url=&text={snapshot_text.replace(' ','%20').replace(chr(10),'%0A')}"
-        st.markdown(f'<a href="{tg_snap_url}" target="_blank" style="display:inline-block;margin-top:0.4rem;padding:0.4rem 1.2rem;background:#2a2a4a;border:1px solid #a78bfa;border-radius:8px;color:#e8e0ff;text-decoration:none;font-family:JetBrains Mono,monospace;font-size:0.8rem;">📨 Open in Telegram</a>', unsafe_allow_html=True)
+        _snap_dl, _snap_tg = st.columns([1, 2])
+        with _snap_dl:
+            import json as _json
+            st.download_button(
+                label="⬇️ Download snapshot",
+                data=_json.dumps({
+                    "date": str(date.today()),
+                    "days_logged": total_logs,
+                    "active_goals": total_goals,
+                    "wishes": total_wishes,
+                    "outcomes": total_outcomes,
+                }, indent=2),
+                file_name=f"life_archive_snapshot_{date.today()}.json",
+                mime="application/json",
+                use_container_width=True,
+            )
+        with _snap_tg:
+            st.markdown(f'<a href="{tg_snap_url}" target="_blank" style="display:inline-block;width:100%;margin-top:0.3rem;padding:0.4rem 1.2rem;background:#2a2a4a;border:1px solid #a78bfa;border-radius:8px;color:#e8e0ff;text-decoration:none;font-family:JetBrains Mono,monospace;font-size:0.8rem;text-align:center;">📨 Open in Telegram</a>', unsafe_allow_html=True)
 
     st.markdown('<hr class="divider">', unsafe_allow_html=True)
 
@@ -721,8 +738,20 @@ elif page == "📝  Daily Log":
         share_text = build_share_text(e)
         st.text_area("📤 Share / Export — copy and paste to Telegram or your channel",
                      value=share_text, height=320, key="share_export_box")
-        tg_url = f"https://t.me/share/url?url=&text={share_text.replace(' ','%20').replace('\n','%0A')[:2000]}"
-        st.markdown(f'<a href="{tg_url}" target="_blank" style="display:inline-block;margin-top:0.4rem;padding:0.4rem 1.2rem;background:#2a2a4a;border:1px solid #a78bfa;border-radius:8px;color:#e8e0ff;text-decoration:none;font-family:JetBrains Mono,monospace;font-size:0.8rem;">📨 Open in Telegram</a>', unsafe_allow_html=True)
+
+        _dl_col, _tg_col = st.columns([1, 2])
+        with _dl_col:
+            import json as _json
+            st.download_button(
+                label="⬇️ Download as JSON",
+                data=_json.dumps(e, indent=2, default=str),
+                file_name=f"life_archive_{e.get('date', str(today))}.json",
+                mime="application/json",
+                use_container_width=True,
+            )
+        with _tg_col:
+            tg_url = f"https://t.me/share/url?url=&text={share_text.replace(' ','%20').replace(chr(10),'%0A')[:2000]}"
+            st.markdown(f'<a href="{tg_url}" target="_blank" style="display:inline-block;width:100%;margin-top:0.3rem;padding:0.4rem 1.2rem;background:#2a2a4a;border:1px solid #a78bfa;border-radius:8px;color:#e8e0ff;text-decoration:none;font-family:JetBrains Mono,monospace;font-size:0.8rem;text-align:center;">📨 Open in Telegram</a>', unsafe_allow_html=True)
 
         if st.button("✏️ Edit Today's Entry"):
             st.session_state.edit_mode = True
@@ -2324,6 +2353,44 @@ elif page == "⚙️  Settings":
         st.markdown('<hr class="divider">', unsafe_allow_html=True)
         st.markdown("**Current wallpaper preview:**")
         st.markdown(f'<div style="width:100%;height:120px;background-image:url(\'data:image/jpeg;base64,{current_wp}\');background-size:cover;background-position:center;border-radius:8px;border:1px solid #2a2a4a;"></div>', unsafe_allow_html=True)
+
+    # ============================================================
+    # EXPORT ALL DATA
+    # ============================================================
+    st.markdown('<hr class="divider">', unsafe_allow_html=True)
+    st.markdown('<div class="section-sub" style="letter-spacing:1px;">EXPORT YOUR ARCHIVE</div>', unsafe_allow_html=True)
+    st.markdown('<div style="color:#aaa;font-size:0.85rem;margin-bottom:0.8rem;">Downloads everything — all tables — as a single JSON file. Good to run before using the Danger Zone below.</div>', unsafe_allow_html=True)
+
+    if st.button("📦 Generate full archive export", use_container_width=False):
+        import json as _json
+        from datetime import datetime as _dt
+        EXPORT_TABLES = [
+            "daily_logs", "reading_sessions", "books", "life_events",
+            "purchases", "wishes", "goals", "goal_sessions", "outcomes",
+            "skills", "skill_sessions", "win_failure_archive",
+        ]
+        export_data = {"exported_at": _dt.now().isoformat(), "tables": {}}
+        export_errors = []
+        with st.spinner("Fetching all data..."):
+            for t in EXPORT_TABLES:
+                try:
+                    rows = supabase.table(t).select("*").execute().data or []
+                    export_data["tables"][t] = rows
+                except Exception as ex:
+                    export_errors.append(f"{t}: {ex}")
+                    export_data["tables"][t] = []
+
+        total_rows = sum(len(v) for v in export_data["tables"].values())
+        if export_errors:
+            st.warning(f"Some tables failed: {'; '.join(export_errors)}")
+
+        st.download_button(
+            label=f"⬇️ Download archive ({total_rows} rows across {len(EXPORT_TABLES)} tables)",
+            data=_json.dumps(export_data, indent=2, default=str),
+            file_name=f"life_archive_full_{date.today()}.json",
+            mime="application/json",
+            use_container_width=True,
+        )
 
     # ============================================================
     # DANGER ZONE — wipe all data
