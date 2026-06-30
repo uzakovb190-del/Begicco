@@ -526,6 +526,27 @@ if page == "🏠  Home":
 
     st.markdown('<hr class="divider">', unsafe_allow_html=True)
 
+    # ---- Stats Snapshot Share ----
+    with st.expander("📤 Share your stats snapshot"):
+        snapshot_lines = [
+            f"📊 *Life Archive — Stats Snapshot*",
+            f"📅 {date.today().strftime('%B %d, %Y')}",
+            f"",
+            f"📝 Days Logged: {total_logs}",
+            f"🎯 Active Goals: {total_goals}",
+            f"💫 Wishes: {total_wishes}",
+            f"🏆 Outcomes: {total_outcomes}",
+            f"",
+            f"— sent from Life Archive",
+        ]
+        snapshot_text = "\n".join(snapshot_lines)
+        st.text_area("Copy and send to Telegram or your channel",
+                     value=snapshot_text, height=200, key="home_share_box")
+        tg_snap_url = f"https://t.me/share/url?url=&text={snapshot_text.replace(' ','%20').replace(chr(10),'%0A')}"
+        st.markdown(f'<a href="{tg_snap_url}" target="_blank" style="display:inline-block;margin-top:0.4rem;padding:0.4rem 1.2rem;background:#2a2a4a;border:1px solid #a78bfa;border-radius:8px;color:#e8e0ff;text-decoration:none;font-family:JetBrains Mono,monospace;font-size:0.8rem;">📨 Open in Telegram</a>', unsafe_allow_html=True)
+
+    st.markdown('<hr class="divider">', unsafe_allow_html=True)
+
     st.markdown("""
     <div class="card">
         <div style="font-size:0.75rem; color:#3a3a6a; font-family:'JetBrains Mono',monospace; margin-bottom:0.6rem; letter-spacing:1px;">WHAT THIS IS</div>
@@ -561,6 +582,8 @@ elif page == "📝  Daily Log":
         st.session_state.accomplishments = []
     if "media_list" not in st.session_state:
         st.session_state.media_list = []
+    if "workouts" not in st.session_state:
+        st.session_state.workouts = []
     if "edit_mode" not in st.session_state:
         st.session_state.edit_mode = False
 
@@ -629,10 +652,83 @@ elif page == "📝  Daily Log":
         st.markdown('<hr class="divider">', unsafe_allow_html=True)
         st.markdown(f"**Good deed:** {e.get('good_deed','—')}")
 
+        st.markdown('<hr class="divider">', unsafe_allow_html=True)
+
+        # ---- Exercise view ----
+        if e.get('rest_day'):
+            st.markdown("🛌 **Rest day**")
+        else:
+            workouts_saved = e.get('workouts') or []
+            intensity_color = {"easy":"#4ade80","moderate":"#facc15","hard":"#f97316","max":"#f87171"}.get(e.get('training_intensity',''),'#a78bfa')
+            body_color = {"great":"#4ade80","good":"#86efac","okay":"#facc15","sore":"#f97316","injured":"#f87171"}.get(e.get('body_feel',''),'#ccc')
+
+            ex_col1, ex_col2, ex_col3 = st.columns(3)
+            with ex_col1:
+                st.markdown(f"**Duration** &nbsp; `{e.get('training_duration', 0)} min`")
+            with ex_col2:
+                st.markdown(f"**Intensity** &nbsp; <span style='color:{intensity_color};font-weight:700'>{(e.get('training_intensity') or '—').upper()}</span>", unsafe_allow_html=True)
+            with ex_col3:
+                st.markdown(f"**Body Feel** &nbsp; <span style='color:{body_color};font-weight:700'>{(e.get('body_feel') or '—').upper()}</span>", unsafe_allow_html=True)
+
+            if workouts_saved:
+                st.markdown('<div class="card"><div style="font-size:0.75rem;color:#555;font-family:\'JetBrains Mono\',monospace;margin-bottom:0.5rem;">SESSIONS</div>', unsafe_allow_html=True)
+                for w in workouts_saved:
+                    st.markdown(f"&nbsp; {w.get('type','🏋️')} &nbsp; `{w.get('label','')}`")
+                st.markdown('</div>', unsafe_allow_html=True)
+
+            if e.get('training_notes'):
+                st.markdown(f"📝 {e.get('training_notes')}")
+
+        st.markdown('<hr class="divider">', unsafe_allow_html=True)
+
+        # ---- Share / Export ----
+        def build_share_text(entry):
+            d = entry.get('date', str(date.today()))
+            lines = [
+                f"📅 *Life Archive — {d}*",
+                f"",
+                f"🧠 Mood: {entry.get('mood_score','—')}/10  |  Clarity: {entry.get('mental_clarity','—')}  |  Emotion: {entry.get('dominant_emotion','—')}",
+                f"😴 Sleep: {entry.get('sleep_duration','—')}h  |  Physical: {entry.get('physical_state','—')}  |  Mental: {entry.get('mental_state','—')}",
+                f"",
+            ]
+            if entry.get('daily_summary'):
+                lines += [f"📝 *Summary*", entry['daily_summary'], ""]
+            accs = entry.get('accomplishments') or []
+            if accs:
+                lines += ["✦ *Accomplishments*"] + [f"  • {a}" for a in accs] + [""]
+            if entry.get('good_deed'):
+                lines += [f"💛 Good deed: {entry['good_deed']}", ""]
+            # exercise
+            if entry.get('rest_day'):
+                lines += ["🛌 Rest day", ""]
+            else:
+                ws = entry.get('workouts') or []
+                if ws or entry.get('training_duration'):
+                    lines += [f"🏋️ *Training* — {entry.get('training_duration',0)} min | {(entry.get('training_intensity') or '').upper()} | felt {entry.get('body_feel','—')}"]
+                    for w in ws:
+                        lines.append(f"  {w.get('type','')} {w.get('label','')}")
+                    if entry.get('training_notes'):
+                        lines.append(f"  📝 {entry['training_notes']}")
+                    lines.append("")
+            media = entry.get('media_consumed') or []
+            if media:
+                lines += ["🎬 *Media*"] + [f"  • {m}" for m in media] + [""]
+            if entry.get('daily_spending'):
+                lines += [f"💸 Spent: {entry['daily_spending']:,.0f} UZS" + (f" — {entry['spending_notes']}" if entry.get('spending_notes') else ""), ""]
+            lines.append("— sent from Life Archive")
+            return "\n".join(lines)
+
+        share_text = build_share_text(e)
+        st.text_area("📤 Share / Export — copy and paste to Telegram or your channel",
+                     value=share_text, height=320, key="share_export_box")
+        tg_url = f"https://t.me/share/url?url=&text={share_text.replace(' ','%20').replace('\n','%0A')[:2000]}"
+        st.markdown(f'<a href="{tg_url}" target="_blank" style="display:inline-block;margin-top:0.4rem;padding:0.4rem 1.2rem;background:#2a2a4a;border:1px solid #a78bfa;border-radius:8px;color:#e8e0ff;text-decoration:none;font-family:JetBrains Mono,monospace;font-size:0.8rem;">📨 Open in Telegram</a>', unsafe_allow_html=True)
+
         if st.button("✏️ Edit Today's Entry"):
             st.session_state.edit_mode = True
             st.session_state.accomplishments = e.get('accomplishments') or []
             st.session_state.media_list = e.get('media_consumed') or []
+            st.session_state.workouts = e.get('workouts') or []
             st.rerun()
 
     # ---- FORM MODE (new entry or editing) ----
@@ -752,7 +848,57 @@ elif page == "📝  Daily Log":
 
         st.markdown('<hr class="divider">', unsafe_allow_html=True)
 
-        # --- Save Button ---
+        # --- Section F: Exercise / Training ---
+        st.markdown('<div style="font-size:0.75rem;color:#555;font-family:\'JetBrains Mono\',monospace;margin-bottom:0.8rem;letter-spacing:1px;">F · EXERCISE & TRAINING</div>', unsafe_allow_html=True)
+
+        rest_day = st.checkbox("🛌 Rest day — no training today", value=e.get('rest_day', False))
+
+        if not rest_day:
+            # Workout list (type + label per item)
+            WORKOUT_TYPES = ["🥊 Boxing / MMA", "🏃 Cardio", "🏋️ Weights", "🧘 Mobility / Stretching", "⚽ Sport", "🤸 Calisthenics", "🥋 Martial Arts", "Other"]
+            st.markdown("**Sessions**")
+            w_col1, w_col2, w_col3 = st.columns([2, 3, 1])
+            with w_col1:
+                new_w_type = st.selectbox("Type", WORKOUT_TYPES, key="new_w_type", label_visibility="collapsed")
+            with w_col2:
+                new_w_label = st.text_input("Session label", key="new_w_label", label_visibility="collapsed", placeholder="e.g. Sparring 3×3, Bench press 4×8...")
+            with w_col3:
+                if st.button("＋ Add", key="add_workout"):
+                    if new_w_label.strip():
+                        st.session_state.workouts.append({"type": new_w_type, "label": new_w_label.strip()})
+                        st.rerun()
+
+            for i, w in enumerate(st.session_state.workouts):
+                wc1, wc2 = st.columns([6, 1])
+                with wc1:
+                    st.markdown(f"&nbsp; {w['type']} &nbsp; `{w['label']}`")
+                with wc2:
+                    if st.button("✕", key=f"del_workout_{i}"):
+                        st.session_state.workouts.pop(i)
+                        st.rerun()
+
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                training_duration = st.number_input("Total duration (min)", min_value=0, max_value=480, step=5,
+                                                    value=int(e.get('training_duration') or 0), key="training_duration")
+            with col2:
+                intensity_opts = ["easy", "moderate", "hard", "max"]
+                intensity_default = intensity_opts.index(e.get('training_intensity') if e.get('training_intensity') in intensity_opts else 'moderate')
+                training_intensity = st.selectbox("Intensity", intensity_opts, index=intensity_default)
+            with col3:
+                body_feel_opts = ["great", "good", "okay", "sore", "injured"]
+                body_feel_default = body_feel_opts.index(e.get('body_feel') if e.get('body_feel') in body_feel_opts else 'good')
+                body_feel = st.selectbox("Body Feel After", body_feel_opts, index=body_feel_default)
+
+            training_notes = st.text_input("Training Notes", value=e.get('training_notes', ''),
+                                           placeholder="PRs, observations, what to improve next time...")
+        else:
+            training_duration = 0
+            training_intensity = None
+            body_feel = None
+            training_notes = ""
+
+        st.markdown('<hr class="divider">', unsafe_allow_html=True)
         if st.button("💾 Save Day", type="primary"):
             if not dominant_emotion.strip():
                 st.error("Please enter your dominant emotion.")
@@ -775,6 +921,12 @@ elif page == "📝  Daily Log":
                     "daily_spending": daily_spending,
                     "spending_notes": spending_notes.strip(),
                     "media_consumed": st.session_state.media_list,
+                    "rest_day": rest_day,
+                    "workouts": st.session_state.workouts if not rest_day else [],
+                    "training_duration": training_duration if not rest_day else 0,
+                    "training_intensity": training_intensity if not rest_day else None,
+                    "body_feel": body_feel if not rest_day else None,
+                    "training_notes": training_notes.strip() if not rest_day else "",
                 }
                 try:
                     if already_logged:
@@ -786,6 +938,7 @@ elif page == "📝  Daily Log":
                     st.session_state.edit_mode = False
                     st.session_state.accomplishments = []
                     st.session_state.media_list = []
+                    st.session_state.workouts = []
                     st.rerun()
                 except Exception as ex:
                     st.error(f"Error saving: {ex}")
@@ -2170,6 +2323,76 @@ elif page == "⚙️  Settings":
     if current_wp:
         st.markdown('<hr class="divider">', unsafe_allow_html=True)
         st.markdown("**Current wallpaper preview:**")
-        import base64 as b64mod
-        st.markdown(f'<img src="data:image/jpeg;base64,{current_wp[:100]}..." style="display:none">', unsafe_allow_html=True)
         st.markdown(f'<div style="width:100%;height:120px;background-image:url(\'data:image/jpeg;base64,{current_wp}\');background-size:cover;background-position:center;border-radius:8px;border:1px solid #2a2a4a;"></div>', unsafe_allow_html=True)
+
+    # ============================================================
+    # DANGER ZONE — wipe all data
+    # ============================================================
+    st.markdown('<hr class="divider">', unsafe_allow_html=True)
+
+    # Every table the app writes to. Order doesn't matter — we clear all of them.
+    ALL_DATA_TABLES = [
+        "daily_logs", "reading_sessions", "books", "life_events",
+        "purchases", "wishes", "goals", "goal_sessions", "outcomes",
+        "skills", "skill_sessions", "win_failure_archive",
+    ]
+    CONFIRM_PHRASE = "DELETE EVERYTHING"
+
+    with st.expander("⚠️  Danger Zone — delete all data"):
+        st.markdown(
+            '<div style="color:#f87171;font-size:0.9rem;">'
+            "This permanently erases <b>every entry</b> in your archive — daily logs, "
+            "reading, life events, purchases, wishes, goals, outcomes, skills, and the "
+            "win/failure archive. This <b>cannot be undone</b> and there are no backups "
+            "on the free plan."
+            "</div>",
+            unsafe_allow_html=True,
+        )
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        also_wallpaper = st.checkbox("Also reset appearance (remove wallpaper + opacity)", value=False)
+        understood = st.checkbox("I understand this is permanent and irreversible.", value=False)
+        typed = st.text_input(
+            f'Type "{CONFIRM_PHRASE}" to confirm',
+            key="danger_confirm",
+            placeholder=CONFIRM_PHRASE,
+        )
+
+        ready = understood and typed.strip() == CONFIRM_PHRASE
+        if st.button("🗑️ Permanently delete all data", type="primary", disabled=not ready):
+            tables_to_clear = list(ALL_DATA_TABLES)
+            if also_wallpaper:
+                tables_to_clear.append("settings")
+
+            results = []
+            total_deleted = 0
+            # settings is keyed by "key"; every other table by "id"
+            id_col_for = {"settings": "key"}
+            with st.spinner("Wiping your archive..."):
+                for t in tables_to_clear:
+                    idcol = id_col_for.get(t, "id")
+                    try:
+                        rows = supabase.table(t).select(idcol).execute().data or []
+                        ids = [r[idcol] for r in rows]
+                        if ids:
+                            supabase.table(t).delete().in_(idcol, ids).execute()
+                        results.append((t, len(ids), None))
+                        total_deleted += len(ids)
+                    except Exception as ex:
+                        results.append((t, 0, str(ex)))
+
+            failed = [r for r in results if r[2]]
+            if failed:
+                st.error(f"Deleted {total_deleted} rows, but some tables failed:")
+                for t, _, err in failed:
+                    st.markdown(f"&nbsp; ✕ `{t}` — {err}")
+            else:
+                st.success(f"✅ Done. Permanently deleted {total_deleted} rows across {len(tables_to_clear)} tables.")
+
+            # Clear any cached lists in the current session so the UI reflects the wipe.
+            for k in ("accomplishments", "media_list", "workouts"):
+                if k in st.session_state:
+                    st.session_state[k] = []
+
+        if not ready:
+            st.caption("The delete button stays locked until both boxes are checked and the phrase matches exactly.")
