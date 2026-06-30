@@ -1045,6 +1045,17 @@ elif page == "📖  Reading Log":
                     st.markdown(f"### {book['title']}")
                     if inactive_warning:
                         st.markdown(inactive_warning, unsafe_allow_html=True)
+                    genre_tag = f'<span class="badge badge-grey">{book["genre"]}</span> &nbsp;' if book.get("genre") else ""
+                    # Estimated finish date
+                    est_finish = ""
+                    if sessions and total_pages > total_read:
+                        avg_pages = sum(s["pages_read"] for s in sessions) / len(sessions)
+                        if avg_pages > 0:
+                            days_left = int((total_pages - total_read) / avg_pages)
+                            from datetime import timedelta
+                            finish_date = (date.today() + timedelta(days=days_left)).strftime("%b %d")
+                            est_finish = f'<span class="badge badge-blue">📅 est. finish {finish_date}</span>'
+                    st.markdown(f"{genre_tag}{est_finish}", unsafe_allow_html=True)
                     st.caption(f"{book.get('author','Unknown')} · {total_read} / {total_pages} pages · {len(sessions)} sessions")
 
                     if sessions:
@@ -1121,11 +1132,19 @@ elif page == "📖  Reading Log":
         if not finished_books:
             st.info("No finished books yet. Keep reading!")
         else:
-            for book in finished_books:
+            _min_rating = st.selectbox("Minimum rating", ["All", "≥ 5", "≥ 7", "≥ 9"],
+                                       label_visibility="collapsed", key="shelf_rating_filter")
+            _rating_floor = {"All": 0, "≥ 5": 5, "≥ 7": 7, "≥ 9": 9}[_min_rating]
+            _shown = [b for b in finished_books
+                      if (_rating_floor == 0 or (isinstance(b.get("overall_rating"), (int,float)) and b["overall_rating"] >= _rating_floor))]
+            if not _shown:
+                st.info(f"No finished books with rating {_min_rating}.")
+            for book in _shown:
                 rec_badge = '<span class="badge badge-green">👍 Recommended</span>' if book.get("recommend") else '<span class="badge badge-grey">👎 Not Recommended</span>'
                 rating = book.get("overall_rating")
                 rating = rating if isinstance(rating, (int, float)) else "—"
                 rating_color = "#4ade80" if (rating != "—" and rating >= 8) else "#facc15" if (rating != "—" and rating >= 5) else "#f87171"
+                genre_badge = f'<span class="badge badge-grey">{book["genre"]}</span>' if book.get("genre") else ""
 
                 st.markdown(f"""
                 <div class="card">
@@ -1135,6 +1154,7 @@ elif page == "📖  Reading Log":
                             <span style="font-size:0.8rem;color:#666;margin-left:0.8rem;font-family:'JetBrains Mono',monospace;">{book.get('author','')}</span>
                         </div>
                         <div style="display:flex;gap:0.5rem;align-items:center;">
+                            {genre_badge}
                             <span style="font-family:'JetBrains Mono',monospace;font-size:1.2rem;font-weight:800;color:{rating_color};">{rating}/10</span>
                             {rec_badge}
                         </div>
@@ -1154,6 +1174,9 @@ elif page == "📖  Reading Log":
         b_title  = st.text_input("Book Title", placeholder="e.g. Limitless")
         b_author = st.text_input("Author", placeholder="e.g. Jim Kwik")
         b_pages  = st.number_input("Total Pages", min_value=1, step=1, value=300)
+        b_genres = ["Fiction", "Non-Fiction", "Fantasy", "Sci-Fi", "Mystery", "History",
+                    "Biography", "Self-Help", "Economics", "Philosophy", "Science", "Other"]
+        b_genre  = st.selectbox("Genre", b_genres)
 
         if st.button("➕ Add Book", type="primary"):
             if not b_title.strip():
@@ -1164,6 +1187,7 @@ elif page == "📖  Reading Log":
                         "title": b_title.strip(),
                         "author": b_author.strip(),
                         "total_pages": b_pages,
+                        "genre": b_genre,
                         "status": "reading",
                         "date_started": str(date.today())
                     }).execute()
@@ -1217,11 +1241,14 @@ elif page == "🚨  Life Event":
                     border_color = "#444"
 
                 type_colors = {
-                    "realization": "badge-green",
+                    "realization":    "badge-green",
+                    "milestone":      "badge-green",
                     "personal event": "badge-blue",
-                    "accident": "badge-red",
-                    "movie": "badge-grey",
-                    "other": "badge-grey"
+                    "conversation":   "badge-blue",
+                    "decision":       "badge-yellow",
+                    "travel":         "badge-yellow",
+                    "accident":       "badge-red",
+                    "other":          "badge-grey"
                 }
                 type_badge = f'<span class="badge {type_colors.get(e["event_type"], "badge-grey")}">{e["event_type"]}</span>'
 
@@ -1236,6 +1263,8 @@ elif page == "🚨  Life Event":
                     </div>
                     <div style="color:#ccc;font-size:0.9rem;margin-bottom:0.5rem;">{e.get('event_description','')}</div>
                     <div style="color:#888;font-size:0.85rem;font-style:italic;">💭 {e.get('emotional_impact','')}</div>
+                    {f'<div style="margin-top:0.3rem;color:#888;font-size:0.82rem;">👥 {e["people_involved"]}</div>' if e.get('people_involved') else ''}
+                    {f'<div style="margin-top:0.3rem;color:#666;font-size:0.82rem;font-style:italic;">🔄 {e["would_change"]}</div>' if e.get('would_change') else ''}
                     <div style="margin-top:0.5rem;font-size:0.75rem;color:#555;font-family:'JetBrains Mono',monospace;">{e.get('event_date','')}</div>
                 </div>
                 """, unsafe_allow_html=True)
@@ -1269,11 +1298,16 @@ elif page == "🚨  Life Event":
         editing = st.session_state.get("editing_event", None)
         st.markdown(f"#### {'✏️ Editing Event' if editing else 'What happened?'}")
 
-        e_types_list = ["personal event", "realization", "accident", "movie", "other"]
+        e_types_list = ["personal event", "milestone", "realization", "decision",
+                        "conversation", "travel", "accident", "other"]
         e_title  = st.text_input("Event Title", value=editing["event_title"] if editing else "", placeholder="e.g. Got accepted...")
         e_type   = st.selectbox("Event Type", e_types_list, index=e_types_list.index(editing["event_type"]) if editing and editing.get("event_type") in e_types_list else 0)
         e_desc   = st.text_area("Description", value=editing.get("event_description","") if editing else "", height=100)
         e_impact = st.text_area("Emotional Impact", value=editing.get("emotional_impact","") if editing else "", height=80)
+        e_people = st.text_input("People Involved (optional)", value=editing.get("people_involved","") if editing else "",
+                                 placeholder="e.g. Dad, Professor Kim, my team...")
+        e_change = st.text_input("What would you do differently? (optional)", value=editing.get("would_change","") if editing else "",
+                                 placeholder="Hindsight reflection...")
 
         col1, col2 = st.columns(2)
         with col1:
@@ -1294,6 +1328,8 @@ elif page == "🚨  Life Event":
                         "event_type": e_type,
                         "event_description": e_desc.strip(),
                         "emotional_impact": e_impact.strip(),
+                        "people_involved": e_people.strip(),
+                        "would_change": e_change.strip(),
                         "significance_score": e_sig,
                         "event_date": str(e_date)
                     }
@@ -1398,6 +1434,24 @@ elif page == "🛍️  Purchase Tracker":
         if not all_purchases:
             st.info("No purchases logged yet.")
         else:
+            # Monthly spending summary
+            from datetime import datetime as _dt
+            _this_month = date.today().strftime("%Y-%m")
+            _last_month = (date.today().replace(day=1) - __import__("datetime").timedelta(days=1)).strftime("%Y-%m")
+            _this_total = sum(p.get("amount",0) or 0 for p in all_purchases if str(p.get("purchase_date","")).startswith(_this_month))
+            _last_total = sum(p.get("amount",0) or 0 for p in all_purchases if str(p.get("purchase_date","")).startswith(_last_month))
+            _diff = _this_total - _last_total
+            _diff_color = "#f87171" if _diff > 0 else "#4ade80"
+            _diff_str = f'<span style="color:{_diff_color};font-weight:700;">{"+" if _diff>0 else ""}{_diff:,.0f}</span> vs last month'
+            st.markdown(f"""
+            <div class="card" style="display:flex;gap:2rem;align-items:center;">
+                <div>
+                    <div style="font-size:0.72rem;color:#555;font-family:'JetBrains Mono',monospace;letter-spacing:1px;">THIS MONTH</div>
+                    <div style="font-size:1.6rem;font-weight:800;color:#e8e0ff;font-family:'JetBrains Mono',monospace;">{_this_total:,.0f} <span style="font-size:0.8rem;color:#555;">UZS</span></div>
+                </div>
+                <div style="font-size:0.85rem;color:#888;">{_diff_str}</div>
+            </div>
+            """, unsafe_allow_html=True)
             for p in all_purchases:
                 currency = p.get("currency", "UZS")
                 if not p.get("phase2_completed"):
@@ -1536,12 +1590,34 @@ elif page == "🎯  Goals":
             total_hours = sum(s.get("duration_hours", 0) or 0 for s in sessions)
             avg_enjoyment = (sum(s.get("enjoyment_score", 0) or 0 for s in sessions) / len(sessions)) if sessions else 0
 
+            # Days remaining / overdue badge
+            deadline_badge = ""
+            if g.get("target_date") and g["status"] == "active":
+                try:
+                    from datetime import datetime as _dt
+                    _td = _dt.strptime(g["target_date"], "%Y-%m-%d").date()
+                    _diff = (_td - date.today()).days
+                    if _diff < 0:
+                        deadline_badge = f'<span class="badge badge-red">⚠️ {abs(_diff)}d overdue</span>'
+                    elif _diff <= 7:
+                        deadline_badge = f'<span class="badge badge-yellow">⏰ {_diff}d left</span>'
+                    else:
+                        deadline_badge = f'<span class="badge badge-blue">📅 {_diff}d left</span>'
+                except Exception:
+                    pass
+
+            cat_badge = f'<span class="badge badge-grey">{g["category"]}</span>' if g.get("category") else ""
+
             st.markdown(f"""
             <div class="card">
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;">
                     <span style="font-size:1.1rem;font-weight:800;color:#fff;">{g['goal_title']}</span>
-                    {goal_status_badge(g['status'])}
+                    <div style="display:flex;gap:0.5rem;align-items:center;">
+                        {cat_badge} {deadline_badge} {goal_status_badge(g['status'])}
+                    </div>
                 </div>
+                {f'<div style="font-size:0.82rem;color:#a78bfa;margin-bottom:0.3rem;">💡 {g["why"]}</div>' if g.get("why") else ""}
+                {f'<div style="font-size:0.82rem;color:#666;margin-bottom:0.3rem;">📝 {g["progress_notes"]}</div>' if g.get("progress_notes") else ""}
                 <div style="font-size:0.85rem;color:#888;font-family:'JetBrains Mono',monospace;">
                     {len(sessions)} sessions · {total_hours:.1f} hrs total · avg enjoyment {avg_enjoyment:.1f}/5
                 </div>
@@ -1591,21 +1667,49 @@ elif page == "🎯  Goals":
 
             # Status controls
             if g["status"] == "active":
-                col1, col2 = st.columns(2)
+                col1, col2, col3 = st.columns(3)
                 with col1:
-                    if st.button("⏸️ Pause Goal", key=f"pause_{g['id']}"):
+                    if st.button("⏸️ Pause", key=f"pause_{g['id']}"):
                         supabase.table("goals").update({"status": "paused"}).eq("id", g["id"]).execute()
                         st.rerun()
                 with col2:
-                    if st.button("🏁 End Goal → Log Outcome", key=f"end_{g['id']}", type="primary"):
+                    if st.button("🏁 End → Outcome", key=f"end_{g['id']}", type="primary"):
                         st.session_state["outcome_goal"] = dict(g)
                         st.session_state["current_page_override"] = "🏆  Outcomes"
                         st.session_state["nav_override_counter"] = st.session_state.get("nav_override_counter", 0) + 1
                         st.rerun()
+                with col3:
+                    if st.button("🗑️ Delete", key=f"del_goal_{g['id']}"):
+                        st.session_state[f"confirm_del_g_{g['id']}"] = True
+                        st.rerun()
             elif g["status"] == "paused":
-                if st.button("▶️ Resume Goal", key=f"resume_{g['id']}"):
-                    supabase.table("goals").update({"status": "active"}).eq("id", g["id"]).execute()
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.button("▶️ Resume Goal", key=f"resume_{g['id']}"):
+                        supabase.table("goals").update({"status": "active"}).eq("id", g["id"]).execute()
+                        st.rerun()
+                with col2:
+                    if st.button("🗑️ Delete", key=f"del_goal_{g['id']}"):
+                        st.session_state[f"confirm_del_g_{g['id']}"] = True
+                        st.rerun()
+            elif g["status"] == "completed":
+                if st.button("🗑️ Delete", key=f"del_goal_{g['id']}"):
+                    st.session_state[f"confirm_del_g_{g['id']}"] = True
                     st.rerun()
+
+            if st.session_state.get(f"confirm_del_g_{g['id']}", False):
+                st.warning(f"Delete **{g['goal_title']}** and all its sessions?")
+                _dc1, _dc2 = st.columns(2)
+                with _dc1:
+                    if st.button("Yes, delete", key=f"yes_del_g_{g['id']}"):
+                        supabase.table("goal_sessions").delete().eq("goal_id", g["id"]).execute()
+                        supabase.table("goals").delete().eq("id", g["id"]).execute()
+                        st.session_state[f"confirm_del_g_{g['id']}"] = False
+                        st.rerun()
+                with _dc2:
+                    if st.button("Cancel", key=f"cancel_del_g_{g['id']}"):
+                        st.session_state[f"confirm_del_g_{g['id']}"] = False
+                        st.rerun()
 
             st.markdown('<hr class="divider">', unsafe_allow_html=True)
 
@@ -1639,12 +1743,46 @@ elif page == "💫  Wish List":
         if not wishes:
             st.info("No wishes yet. Add anything you want to pursue someday.")
         else:
-            for w in wishes:
+            # Filter bar
+            _pf_opts = ["All", "🔴 High", "🟡 Medium", "🟢 Low"]
+            _pf = st.radio("Filter by priority", _pf_opts, horizontal=True,
+                           label_visibility="collapsed", key="wish_priority_filter")
+            _pf_map = {"All": None, "🔴 High": "high", "🟡 Medium": "medium", "🟢 Low": "low"}
+            _pf_val = _pf_map[_pf]
+
+            # Sort: high → medium → low → None
+            _priority_order = {"high": 0, "medium": 1, "low": 2, None: 3, "": 3}
+            wishes_sorted = sorted(wishes, key=lambda w: _priority_order.get(w.get("priority",""), 3))
+            if _pf_val:
+                wishes_sorted = [w for w in wishes_sorted if w.get("priority") == _pf_val]
+
+            _priority_colors = {"high": "#f87171", "medium": "#facc15", "low": "#4ade80"}
+            _priority_labels = {"high": "🔴 HIGH", "medium": "🟡 MEDIUM", "low": "🟢 LOW"}
+
+            for w in wishes_sorted:
+                pri = w.get("priority", "")
+                pri_color = _priority_colors.get(pri, "#555")
+                pri_label = _priority_labels.get(pri, "")
+                cat_badge = f'<span class="badge badge-grey">{w["category"]}</span>' if w.get("category") else ""
+                pri_badge = f'<span style="font-size:0.72rem;font-weight:700;color:{pri_color};font-family:JetBrains Mono,monospace;">{pri_label}</span>' if pri_label else ""
+
+                # "added X days ago"
+                try:
+                    from datetime import datetime as _dt
+                    _added = _dt.strptime(w.get("date_added",""), "%Y-%m-%d").date()
+                    _days_ago = (date.today() - _added).days
+                    _ago_str = "today" if _days_ago == 0 else f"{_days_ago} days ago"
+                except Exception:
+                    _ago_str = w.get("date_added","")
+
                 st.markdown(f"""
                 <div class="card">
-                    <div style="font-size:1rem;font-weight:800;color:#fff;margin-bottom:0.3rem;">✦ {w['wish_title']}</div>
+                    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:0.3rem;">
+                        <div style="font-size:1rem;font-weight:800;color:#fff;">✦ {w['wish_title']}</div>
+                        <div style="display:flex;gap:0.5rem;align-items:center;">{pri_badge} {cat_badge}</div>
+                    </div>
                     <div style="color:#aaa;font-size:0.9rem;">{w.get('description','')}</div>
-                    <div style="margin-top:0.4rem;font-size:0.75rem;color:#555;font-family:'JetBrains Mono',monospace;">added {w.get('date_added','')}</div>
+                    <div style="margin-top:0.4rem;font-size:0.75rem;color:#555;font-family:'JetBrains Mono',monospace;">added {_ago_str}</div>
                 </div>
                 """, unsafe_allow_html=True)
 
@@ -1699,6 +1837,16 @@ elif page == "💫  Wish List":
         with st.form("wish_form"):
             w_title = st.text_input("Wish Title", value=editing_w["wish_title"] if editing_w else "", placeholder="e.g. Learn Japanese, Visit Japan, Build a startup...")
             w_desc  = st.text_area("Description (optional)", value=editing_w.get("description","") if editing_w else "", height=100, placeholder="Any details, context, or why this matters to you...")
+            _w_cats = ["Personal Growth", "Travel", "Career", "Skills", "Health & Fitness",
+                       "Relationships", "Creative", "Financial", "Education", "Long-term Dream", "Other"]
+            _cat_default = _w_cats.index(editing_w.get("category","Other")) if editing_w and editing_w.get("category") in _w_cats else len(_w_cats)-1
+            w_col1, w_col2 = st.columns(2)
+            with w_col1:
+                w_category = st.selectbox("Category", _w_cats, index=_cat_default)
+            with w_col2:
+                _pri_opts = ["high", "medium", "low"]
+                _pri_default = _pri_opts.index(editing_w.get("priority","medium")) if editing_w and editing_w.get("priority") in _pri_opts else 1
+                w_priority = st.selectbox("Priority", _pri_opts, index=_pri_default)
             submitted = st.form_submit_button("💾 Update Wish" if editing_w else "💾 Add Wish")
 
         if submitted:
@@ -1709,6 +1857,8 @@ elif page == "💫  Wish List":
                     record = {
                         "wish_title": w_title.strip(),
                         "description": w_desc.strip(),
+                        "category": w_category,
+                        "priority": w_priority,
                     }
                     if editing_w_id:
                         supabase.table("wishes").update(record).eq("id", editing_w_id).execute()
@@ -1757,11 +1907,13 @@ elif page == "🏆  Outcomes":
     # ALL OUTCOMES
     # ============================================================
     if view == "📋 All Outcomes":
-        filter_type = st.selectbox("Filter by result", ["All", "win", "fail", "pass", "complete"], label_visibility="collapsed")
+        _result_opts = {"All": None, "✅ Win": "win", "❌ Fail": "fail", "🔵 Pass": "pass", "🏁 Complete": "complete"}
+        filter_label = st.selectbox("Filter by result", list(_result_opts.keys()), label_visibility="collapsed")
+        filter_type = _result_opts[filter_label]
 
         try:
             query = supabase.table("outcomes").select("*").order("outcome_date", desc=True)
-            if filter_type != "All":
+            if filter_type:
                 query = query.eq("result_type", filter_type)
             outcomes = query.execute().data or []
         except:
