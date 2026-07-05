@@ -2,6 +2,7 @@ import streamlit as st
 from supabase import create_client, Client
 from datetime import date
 import base64
+import hmac
 import os
 import mimetypes
 
@@ -66,52 +67,61 @@ st.set_page_config(
 )
 
 # ============================================
-# LOAD WALLPAPER FROM SUPABASE
+# LOAD SETTINGS (cached — no more re-fetching on every rerun)
 # ============================================
-def get_wallpaper():
+WALLPAPER_BUCKET = "wallpapers"
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def get_setting(key: str):
+    """Read one value from the settings table. Cached for an hour;
+    call get_setting.clear() after any write to refresh immediately."""
     try:
-        r = supabase.table("settings").select("value").eq("key", "wallpaper_b64").execute()
+        r = supabase.table("settings").select("value").eq("key", key).execute()
         if r.data:
             return r.data[0]["value"]
-    except:
-        pass
+    except Exception:
+        pass  # settings are cosmetic — fall back to defaults silently
     return None
 
-def get_overlay_opacity():
+def get_overlay_opacity() -> float:
+    v = get_setting("overlay_opacity")
     try:
-        r = supabase.table("settings").select("value").eq("key", "overlay_opacity").execute()
-        if r.data:
-            return float(r.data[0]["value"])
-    except:
-        pass
-    return 0.6
+        return float(v) if v is not None else 0.6
+    except (TypeError, ValueError):
+        return 0.6
 
 def _local_wallpaper():
-    """Return (mime, base64) for the local wallpaper file, or (None, None)."""
+    """Return a CSS-ready data URI for the local wallpaper file, or None."""
     if LOCAL_WALLPAPER_PATH and os.path.exists(LOCAL_WALLPAPER_PATH):
         try:
             with open(LOCAL_WALLPAPER_PATH, "rb") as f:
                 data = f.read()
             mime = mimetypes.guess_type(LOCAL_WALLPAPER_PATH)[0] or "image/jpeg"
-            return mime, base64.b64encode(data).decode("utf-8")
+            return f"data:{mime};base64,{base64.b64encode(data).decode('utf-8')}"
         except Exception:
-            return None, None
-    return None, None
+            return None
+    return None
 
-wallpaper_mime, wallpaper_b64 = _local_wallpaper()
-if not wallpaper_b64:
-    wallpaper_b64 = get_wallpaper()
-    wallpaper_mime = "image/jpeg"
+# Resolution order: local file → Storage URL (new, fast) → legacy base64 (old rows)
+wallpaper_src = _local_wallpaper()
+if not wallpaper_src:
+    _wp_url = get_setting("wallpaper_url")
+    if _wp_url:
+        wallpaper_src = _wp_url
+    else:
+        _wp_b64 = get_setting("wallpaper_b64")  # backward-compat with old saves
+        if _wp_b64:
+            wallpaper_src = f"data:image/jpeg;base64,{_wp_b64}"
 overlay_opacity = get_overlay_opacity()
 
 # ============================================
 # GLOBAL STYLES — SOFT NOIR THEME
 # ============================================
 wallpaper_css = ""
-if wallpaper_b64:
+if wallpaper_src:
     wallpaper_css = f"""
     .stApp {{
-        background-image: url("data:{wallpaper_mime};base64,{wallpaper_b64}");
+        background-image: url("{wallpaper_src}");
         background-size: cover;
         background-position: center;
         background-attachment: fixed;
@@ -393,7 +403,7 @@ if APP_PASSCODE and not st.session_state.get("authed", False):
                                   label_visibility="collapsed", placeholder="Access code")
             _entered = st.form_submit_button("Enter →", use_container_width=True, type="primary")
         if _entered:
-            if _code == APP_PASSCODE:
+            if hmac.compare_digest(str(_code), str(APP_PASSCODE)):
                 st.session_state["authed"] = True
                 st.rerun()
             else:
@@ -463,7 +473,7 @@ if page == "🏠  Home":
         total_goals    = supabase.table("goals").select("id", count="exact").execute().count or 0
         total_wishes   = supabase.table("wishes").select("id", count="exact").execute().count or 0
         total_outcomes = supabase.table("outcomes").select("id", count="exact").execute().count or 0
-    except:
+    except Exception:
         total_logs = total_goals = total_wishes = total_outcomes = 0
 
     # Clickable metric cards — the number itself is the button.
@@ -590,237 +600,295 @@ if page == "🏠  Home":
     """, unsafe_allow_html=True)
 
 elif page == "📝  Daily Log":
+    import streamlit.components.v1 as components
+
     st.markdown('<div class="section-header">📝 Daily Log</div>', unsafe_allow_html=True)
     today = date.today()
-    st.markdown(f'<div class="section-sub">{today.strftime("%A, %B %d %Y")}</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="section-sub">{today.strftime("%A, %B %d %Y")} · morning pages when you wake · evening reflection before sleep</div>', unsafe_allow_html=True)
 
-    # ---- Init session state lists ----
-    if "accomplishments" not in st.session_state:
-        st.session_state.accomplishments = []
-    if "media_list" not in st.session_state:
-        st.session_state.media_list = []
-    if "workouts" not in st.session_state:
-        st.session_state.workouts = []
-    if "edit_mode" not in st.session_state:
-        st.session_state.edit_mode = False
+    # ------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------
+    def _load_day(d):
+        try:
+            r = supabase.table("daily_logs").select("*").eq("date", str(d)).execute()
+            return r.data[0] if r.data else None
+        except Exception as ex:
+            st.caption(f"⚠ couldn't load today's entry: {ex}")
+            return None
 
-    # ---- Check if today already logged ----
-    try:
-        existing = supabase.table("daily_logs").select("*").eq("date", str(today)).execute()
-        already_logged = len(existing.data) > 0
-        existing_entry = existing.data[0] if already_logged else None
-    except:
-        already_logged = False
-        existing_entry = None
+    def _save_partial(fields: dict):
+        """Insert or update only the given columns for today — so saving the
+        morning never wipes the evening, and vice versa."""
+        try:
+            existing_row = _load_day(today)
+            if existing_row:
+                supabase.table("daily_logs").update(fields).eq("date", str(today)).execute()
+            else:
+                supabase.table("daily_logs").insert({"date": str(today), **fields}).execute()
+            _diary_stats.clear()
+            return True, None
+        except Exception as ex:
+            return False, str(ex)
 
-    # ---- VIEW MODE (already logged, not editing) ----
-    if already_logged and not st.session_state.edit_mode:
-        e = existing_entry
-        st.markdown(f'<div class="section-sub">✅ Today\'s entry is saved.</div>', unsafe_allow_html=True)
+    @st.cache_data(ttl=300, show_spinner=False)
+    def _diary_stats():
+        """Writing streak + lifetime word count — the 'watch it grow' numbers."""
+        try:
+            rows = supabase.table("daily_logs").select(
+                "date,morning_entry,evening_entry,daily_summary,self_assessment"
+            ).order("date", desc=True).limit(1000).execute().data or []
+        except Exception:
+            return 0, 0, 0
+        total_words = 0
+        for r in rows:
+            for f in ("morning_entry", "evening_entry", "daily_summary", "self_assessment"):
+                if r.get(f):
+                    total_words += len(str(r[f]).split())
+        # streak: consecutive days ending today or yesterday
+        from datetime import timedelta
+        logged = {r["date"] for r in rows}
+        streak = 0
+        cursor = today if str(today) in logged else today - timedelta(days=1)
+        while str(cursor) in logged:
+            streak += 1
+            cursor -= timedelta(days=1)
+        return streak, total_words, len(rows)
 
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.markdown(f"**Mood** &nbsp; {mood_badge(e['mood_score'])}", unsafe_allow_html=True)
-        with col2:
-            st.markdown(f"**Clarity** &nbsp; {clarity_badge(e['mental_clarity'])}", unsafe_allow_html=True)
-        with col3:
-            st.markdown(f"**Emotion** &nbsp; `{e['dominant_emotion']}`", unsafe_allow_html=True)
+    @st.cache_data(ttl=3600, show_spinner=False)
+    def _on_this_day():
+        """Entries from 7 / 30 / 365 days ago — past-you says hi."""
+        from datetime import timedelta
+        out = []
+        for days, label in [(7, "1 week ago"), (30, "1 month ago"), (365, "1 year ago")]:
+            d = today - timedelta(days=days)
+            try:
+                r = supabase.table("daily_logs").select(
+                    "date,evening_entry,morning_entry,daily_summary,mood_score,gratitude"
+                ).eq("date", str(d)).execute()
+                if r.data:
+                    out.append((label, r.data[0]))
+            except Exception:
+                pass
+        return out
 
-        st.markdown('<hr class="divider">', unsafe_allow_html=True)
+    EVENING_PROMPTS = [
+        "What did today teach you that yesterday-you didn't know?",
+        "Where did you act like the person you want to become?",
+        "What was the hardest moment today — and how did you handle it?",
+        "What would you tell your younger brother about a day like this?",
+        "What are you avoiding right now? Say it plainly.",
+        "One thing you did today that future-you will thank you for.",
+        "If today repeated 100 times, what one change would matter most?",
+        "What drained you today? What refilled you?",
+        "Describe today in one honest sentence. Then explain it.",
+        "What small win did you almost not notice?",
+        "Who helped you today — even in a tiny way?",
+        "What did you do today purely because it was right?",
+        "Kyoto is far. What did you do today that moved you 1 cm closer?",
+        "What are you proud of that nobody else saw?",
+        "What worried you this morning — and did it actually happen?",
+        "What's one thing you want to remember about today in 10 years?",
+    ]
+    _prompt_today = EVENING_PROMPTS[today.toordinal() % len(EVENING_PROMPTS)]
 
-        st.markdown(f"""
-        <div class="card">
-            <div style="font-size:0.75rem;color:#555;font-family:'JetBrains Mono',monospace;margin-bottom:0.5rem;">SELF ASSESSMENT</div>
-            <div style="color:#ccc;">{e.get('self_assessment','—')}</div>
-        </div>
-        <div class="card">
-            <div style="font-size:0.75rem;color:#555;font-family:'JetBrains Mono',monospace;margin-bottom:0.5rem;">DAILY SUMMARY</div>
-            <div style="color:#ccc;">{e.get('daily_summary','—')}</div>
-        </div>
-        """, unsafe_allow_html=True)
+    # ------------------------------------------------------------
+    # Load state
+    # ------------------------------------------------------------
+    e = _load_day(today) or {}
+    morning_done = bool(e.get("morning_entry") or e.get("morning_saved_at"))
+    evening_done = bool(e.get("evening_entry") or e.get("evening_saved_at"))
 
-        accs = e.get('accomplishments') or []
-        media = e.get('media_consumed') or []
+    # per-day init of list widgets (prefill from saved row exactly once per day)
+    if st.session_state.get("dl_loaded_date") != str(today):
+        st.session_state["dl_loaded_date"] = str(today)
+        st.session_state.accomplishments = e.get("accomplishments") or []
+        st.session_state.media_list = e.get("media_consumed") or []
+        st.session_state.workouts = e.get("workouts") or []
+
+    # ------------------------------------------------------------
+    # Growth header — streak · words · status
+    # ------------------------------------------------------------
+    _streak, _words, _days = _diary_stats()
+    _m_badge = '<span class="badge badge-green">🌅 morning saved</span>' if morning_done else '<span class="badge badge-grey">🌅 morning pending</span>'
+    _e_badge = '<span class="badge badge-green">🌙 evening saved</span>' if evening_done else '<span class="badge badge-grey">🌙 evening pending</span>'
+    st.markdown(f"""
+    <div class="card" style="display:flex;gap:1.6rem;flex-wrap:wrap;align-items:center;">
+        <div><span style="font-family:'JetBrains Mono',monospace;font-size:1.5rem;font-weight:700;color:#facc15;">🔥 {_streak}</span>
+             <div class="metric-label">day streak</div></div>
+        <div><span style="font-family:'JetBrains Mono',monospace;font-size:1.5rem;font-weight:700;color:#a78bfa;">{_words:,}</span>
+             <div class="metric-label">words written</div></div>
+        <div><span style="font-family:'JetBrains Mono',monospace;font-size:1.5rem;font-weight:700;color:#4ade80;">{_days}</span>
+             <div class="metric-label">days archived</div></div>
+        <div style="margin-left:auto;">{_m_badge} &nbsp; {_e_badge}</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # ---- On this day ----
+    _memories = _on_this_day()
+    if _memories:
+        with st.expander("🕰️ On this day — a note from past you"):
+            for label, mem in _memories:
+                snippet = (mem.get("evening_entry") or mem.get("morning_entry")
+                           or mem.get("daily_summary") or "")
+                snippet = snippet[:400] + ("…" if len(snippet) > 400 else "")
+                grat = f"<br><span style='color:#4ade80;'>🙏 {mem['gratitude']}</span>" if mem.get("gratitude") else ""
+                st.markdown(f"""
+                <div class="card">
+                    <div style="font-size:0.7rem;color:#3a3a6a;font-family:'JetBrains Mono',monospace;">{label} · {mem.get('date','')} · mood {mem.get('mood_score','—')}/10</div>
+                    <div class="chivalry" style="margin-top:0.4rem;line-height:1.8;">{snippet}{grat}</div>
+                </div>""", unsafe_allow_html=True)
+
+    tab_morning, tab_evening, tab_metrics = st.tabs(["🌅 Morning Pages", "🌙 Evening Reflection", "📊 Day Metrics"])
+
+    # ============================================================
+    # 🌅 MORNING — write when you wake up
+    # ============================================================
+    with tab_morning:
+        # a whisper from last night
+        try:
+            from datetime import timedelta
+            _y = supabase.table("daily_logs").select("evening_entry,gratitude,intention") \
+                .eq("date", str(today - timedelta(days=1))).execute().data
+        except Exception:
+            _y = None
+        if _y and (_y[0].get("evening_entry") or _y[0].get("gratitude")):
+            _last = (_y[0].get("evening_entry") or _y[0].get("gratitude"))[:220]
+            st.markdown(f"""
+            <div style="border-left:3px solid #a78bfa;padding:0.5rem 1rem;color:#9ca3af;font-style:italic;font-size:0.9rem;">
+                last night you wrote: “{_last}…”
+            </div><br>""", unsafe_allow_html=True)
 
         col1, col2 = st.columns(2)
         with col1:
-            st.markdown('<div class="card"><div style="font-size:0.75rem;color:#555;font-family:\'JetBrains Mono\',monospace;margin-bottom:0.5rem;">ACCOMPLISHMENTS</div>', unsafe_allow_html=True)
-            for a in accs:
-                st.markdown(f"&nbsp; ✦ {a}")
-            st.markdown('</div>', unsafe_allow_html=True)
+            waking_mood = st.slider("Waking mood", 1, 10, int(e.get("waking_mood") or 6), key="m_waking_mood")
+            sleep_duration = st.number_input("Sleep (hours)", 0.0, 24.0, float(e.get("sleep_duration") or 7.0), step=0.5, key="m_sleep")
         with col2:
-            st.markdown('<div class="card"><div style="font-size:0.75rem;color:#555;font-family:\'JetBrains Mono\',monospace;margin-bottom:0.5rem;">MEDIA CONSUMED</div>', unsafe_allow_html=True)
-            for m in media:
-                st.markdown(f"&nbsp; 🎬 {m}")
-            st.markdown('</div>', unsafe_allow_html=True)
+            dream_log = st.text_area("Dream log (optional)", value=e.get("dream_log") or "", height=68,
+                                     placeholder="Any dreams worth keeping?", key="m_dream")
 
-        st.markdown('<hr class="divider">', unsafe_allow_html=True)
+        intention = st.text_input("🎯 One intention for today",
+                                  value=e.get("intention") or "",
+                                  placeholder="If only ONE thing happens today, it should be…", key="m_intention")
 
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
-            st.markdown(f"**Sleep** &nbsp; `{e.get('sleep_duration','—')} hrs`")
-        with col2:
-            st.markdown(f"**Physical** &nbsp; {physical_badge(e.get('physical_state','neutral'))}", unsafe_allow_html=True)
-        with col3:
-            st.markdown(f"**Mental** &nbsp; {mental_badge(e.get('mental_state','stable'))}", unsafe_allow_html=True)
-        with col4:
-            st.markdown(f"**Spent** &nbsp; `{e.get('daily_spending',0)} UZS`")
+        morning_entry = st.text_area(
+            "Morning pages — empty your head onto the page",
+            value=e.get("morning_entry") or "", height=220, key="m_entry",
+            placeholder=("Good morning. Write freely — how you slept, what's on your mind, "
+                         "what you're worried or excited about. No structure, no judging. "
+                         "This is the raw feed of your life."))
+        _mw = len(morning_entry.split())
+        st.caption(f"✍️ {_mw} words")
 
-        st.markdown('<hr class="divider">', unsafe_allow_html=True)
-        st.markdown(f"**Good deed:** {e.get('good_deed','—')}")
-
-        st.markdown('<hr class="divider">', unsafe_allow_html=True)
-
-        # ---- Exercise view ----
-        if e.get('rest_day'):
-            st.markdown("🛌 **Rest day**")
-        else:
-            workouts_saved = e.get('workouts') or []
-            intensity_color = {"easy":"#4ade80","moderate":"#facc15","hard":"#f97316","max":"#f87171"}.get(e.get('training_intensity',''),'#a78bfa')
-            body_color = {"great":"#4ade80","good":"#86efac","okay":"#facc15","sore":"#f97316","injured":"#f87171"}.get(e.get('body_feel',''),'#ccc')
-
-            ex_col1, ex_col2, ex_col3 = st.columns(3)
-            with ex_col1:
-                st.markdown(f"**Duration** &nbsp; `{e.get('training_duration', 0)} min`")
-            with ex_col2:
-                st.markdown(f"**Intensity** &nbsp; <span style='color:{intensity_color};font-weight:700'>{(e.get('training_intensity') or '—').upper()}</span>", unsafe_allow_html=True)
-            with ex_col3:
-                st.markdown(f"**Body Feel** &nbsp; <span style='color:{body_color};font-weight:700'>{(e.get('body_feel') or '—').upper()}</span>", unsafe_allow_html=True)
-
-            if workouts_saved:
-                st.markdown('<div class="card"><div style="font-size:0.75rem;color:#555;font-family:\'JetBrains Mono\',monospace;margin-bottom:0.5rem;">SESSIONS</div>', unsafe_allow_html=True)
-                for w in workouts_saved:
-                    st.markdown(f"&nbsp; {w.get('type','🏋️')} &nbsp; `{w.get('label','')}`")
-                st.markdown('</div>', unsafe_allow_html=True)
-
-            if e.get('training_notes'):
-                st.markdown(f"📝 {e.get('training_notes')}")
-
-        # ---- Training streak ----
-        try:
-            _streak_logs = supabase.table("daily_logs").select("date,rest_day,training_duration").order("date", desc=True).limit(60).execute().data or []
-            _streak = 0
-            for _sl in _streak_logs:
-                if not _sl.get("rest_day") and (_sl.get("training_duration") or 0) > 0:
-                    _streak += 1
-                else:
-                    break
-            if _streak >= 2:
-                st.markdown(f'<div style="font-size:0.95rem;color:#facc15;font-family:JetBrains Mono,monospace;margin-bottom:0.5rem;">🔥 {_streak} day training streak</div>', unsafe_allow_html=True)
-        except Exception:
-            pass
-
-        st.markdown('<hr class="divider">', unsafe_allow_html=True)
-
-        # ---- Share / Export ----
-        def build_share_text(entry):
-            d = entry.get('date', str(date.today()))
-            lines = [
-                f"📅 *Life Archive — {d}*",
-                f"",
-                f"🧠 Mood: {entry.get('mood_score','—')}/10  |  Clarity: {entry.get('mental_clarity','—')}  |  Emotion: {entry.get('dominant_emotion','—')}",
-                f"😴 Sleep: {entry.get('sleep_duration','—')}h  |  Physical: {entry.get('physical_state','—')}  |  Mental: {entry.get('mental_state','—')}",
-                f"",
-            ]
-            if entry.get('daily_summary'):
-                lines += [f"📝 *Summary*", entry['daily_summary'], ""]
-            accs = entry.get('accomplishments') or []
-            if accs:
-                lines += ["✦ *Accomplishments*"] + [f"  • {a}" for a in accs] + [""]
-            if entry.get('good_deed'):
-                lines += [f"💛 Good deed: {entry['good_deed']}", ""]
-            # exercise
-            if entry.get('rest_day'):
-                lines += ["🛌 Rest day", ""]
+        if st.button("💾 Save Morning", type="primary", key="save_morning"):
+            ok, err = _save_partial({
+                "waking_mood": waking_mood,
+                "sleep_duration": sleep_duration,
+                "dream_log": dream_log.strip(),
+                "intention": intention.strip(),
+                "morning_entry": morning_entry.strip(),
+                "morning_saved_at": "now()",
+            })
+            if ok:
+                st.toast("🌅 Morning saved. Go win the day.")
+                st.rerun()
             else:
-                ws = entry.get('workouts') or []
-                if ws or entry.get('training_duration'):
-                    lines += [f"🏋️ *Training* — {entry.get('training_duration',0)} min | {(entry.get('training_intensity') or '').upper()} | felt {entry.get('body_feel','—')}"]
-                    for w in ws:
-                        lines.append(f"  {w.get('type','')} {w.get('label','')}")
-                    if entry.get('training_notes'):
-                        lines.append(f"  📝 {entry['training_notes']}")
-                    lines.append("")
-            media = entry.get('media_consumed') or []
-            if media:
-                lines += ["🎬 *Media*"] + [f"  • {m}" for m in media] + [""]
-            if entry.get('daily_spending'):
-                lines += [f"💸 Spent: {entry['daily_spending']:,.0f} UZS" + (f" — {entry['spending_notes']}" if entry.get('spending_notes') else ""), ""]
-            lines.append("— sent from Life Archive")
-            return "\n".join(lines)
+                st.error(f"Save failed: {err}")
 
-        share_text = build_share_text(e)
-        st.text_area("📤 Share / Export — copy and paste to Telegram or your channel",
-                     value=share_text, height=320, key="share_export_box")
+    # ============================================================
+    # 🌙 EVENING — the 10–15 min self-talk
+    # ============================================================
+    with tab_evening:
+        if e.get("intention"):
+            st.markdown(f"""
+            <div style="border-left:3px solid #facc15;padding:0.5rem 1rem;font-size:0.9rem;color:#e8e0ff;">
+                🎯 This morning you said: <b>“{e['intention']}”</b> — did it happen?
+            </div><br>""", unsafe_allow_html=True)
 
-        _dl_col, _tg_col = st.columns([1, 2])
-        with _dl_col:
-            import json as _json
-            st.download_button(
-                label="⬇️ Download as JSON",
-                data=_json.dumps(e, indent=2, default=str),
-                file_name=f"life_archive_{e.get('date', str(today))}.json",
-                mime="application/json",
-                use_container_width=True,
-            )
-        with _tg_col:
-            tg_url = f"https://t.me/share/url?url=&text={share_text.replace(' ','%20').replace(chr(10),'%0A')[:2000]}"
-            st.markdown(f'<a href="{tg_url}" target="_blank" style="display:inline-block;width:100%;margin-top:0.3rem;padding:0.4rem 1.2rem;background:#2a2a4a;border:1px solid #a78bfa;border-radius:8px;color:#e8e0ff;text-decoration:none;font-family:JetBrains Mono,monospace;font-size:0.8rem;text-align:center;">📨 Open in Telegram</a>', unsafe_allow_html=True)
+        # ---- 15-minute self-talk timer ----
+        with st.expander("⏱ Start your 15-minute reflection timer"):
+            components.html("""
+            <div style="font-family:monospace;text-align:center;background:transparent;">
+              <div id="t" style="font-size:2.6rem;font-weight:700;color:#a78bfa;">15:00</div>
+              <button onclick="startT()" style="margin:4px;padding:6px 22px;background:#1a1a3a;color:#e8e0ff;border:1px solid #a78bfa;border-radius:8px;cursor:pointer;">Start</button>
+              <button onclick="resetT()" style="margin:4px;padding:6px 22px;background:#1a1a3a;color:#9ca3af;border:1px solid #444;border-radius:8px;cursor:pointer;">Reset</button>
+              <script>
+                let secs=900, iv=null;
+                function draw(){const m=String(Math.floor(secs/60)).padStart(2,'0'),s=String(secs%60).padStart(2,'0');
+                  const el=document.getElementById('t'); el.textContent=m+':'+s;
+                  if(secs===0){el.textContent='✦ done — save your entry'; el.style.color='#4ade80';}}
+                function startT(){if(iv)return; iv=setInterval(()=>{if(secs>0){secs--;draw();}else{clearInterval(iv);iv=null;draw();}},1000);}
+                function resetT(){clearInterval(iv);iv=null;secs=900;
+                  document.getElementById('t').style.color='#a78bfa';draw();}
+              </script>
+            </div>""", height=130)
 
-        if st.button("✏️ Edit Today's Entry"):
-            st.session_state.edit_mode = True
-            st.session_state.accomplishments = e.get('accomplishments') or []
-            st.session_state.media_list = e.get('media_consumed') or []
-            st.session_state.workouts = e.get('workouts') or []
-            st.rerun()
+        st.markdown(f"""
+        <div class="card" style="border-color:#a78bfa;">
+            <div style="font-size:0.7rem;color:#3a3a6a;font-family:'JetBrains Mono',monospace;letter-spacing:1px;">TONIGHT'S PROMPT</div>
+            <div class="chivalry" style="font-size:1.05rem;margin-top:0.4rem;"><em>{_prompt_today}</em></div>
+        </div>""", unsafe_allow_html=True)
 
-    # ---- FORM MODE (new entry or editing) ----
-    else:
-        if already_logged:
-            st.info("Editing today's entry. Changes will overwrite the saved record.")
-            e = existing_entry
-        else:
-            e = {}
+        evening_entry = st.text_area(
+            "Evening reflection — talk to yourself honestly",
+            value=e.get("evening_entry") or "", height=300, key="e_entry",
+            placeholder=("Sit with the day for 10–15 minutes. What actually happened? "
+                         "What did you feel? Where were you strong, where did you fold? "
+                         "End by telling yourself something true and encouraging — "
+                         "you're the one reading this in a year."))
+        _ew = len(evening_entry.split())
+        st.caption(f"✍️ {_ew} words" + (" · that's a real entry 💪" if _ew >= 150 else ""))
 
-        # --- Section A: Emotional & Cognitive ---
-        st.markdown('<div style="font-size:0.75rem;color:#555;font-family:\'JetBrains Mono\',monospace;margin-bottom:0.8rem;letter-spacing:1px;">A · EMOTIONAL & COGNITIVE STATE</div>', unsafe_allow_html=True)
+        gratitude = st.text_input("🙏 One thing you're grateful for today",
+                                  value=e.get("gratitude") or "", key="e_gratitude",
+                                  placeholder="Small counts. Plov counts.")
+
+        st.markdown('<hr class="divider">', unsafe_allow_html=True)
+        st.markdown('<div style="font-size:0.75rem;color:#555;font-family:\'JetBrains Mono\',monospace;margin-bottom:0.8rem;letter-spacing:1px;">STATE CHECK</div>', unsafe_allow_html=True)
 
         col1, col2 = st.columns([2, 1])
         with col1:
-            mood_score = st.slider("Mood Score", 1, 10, e.get('mood_score', 5))
+            mood_score = st.slider("Mood Score", 1, 10, int(e.get("mood_score") or 5), key="e_mood")
         with col2:
             st.markdown(f"<br>{mood_badge(mood_score)}", unsafe_allow_html=True)
 
         col1, col2 = st.columns(2)
         with col1:
             clarity_options = ["foggy", "normal", "sharp"]
-            clarity_default = clarity_options.index(e.get('mental_clarity') if e.get('mental_clarity') in clarity_options else 'normal')
-            mental_clarity = st.selectbox("Mental Clarity", clarity_options, index=clarity_default)
+            _cd = clarity_options.index(e.get("mental_clarity")) if e.get("mental_clarity") in clarity_options else 1
+            mental_clarity = st.selectbox("Mental Clarity", clarity_options, index=_cd, key="e_clarity")
         with col2:
-            st.markdown(f"<br>{clarity_badge(mental_clarity)}", unsafe_allow_html=True)
+            dominant_emotion = st.text_input("Dominant Emotion", value=e.get("dominant_emotion") or "",
+                                             placeholder="e.g. anxious, hopeful, calm…", key="e_emotion")
 
-        dominant_emotion = st.text_input("Dominant Emotion", value=e.get('dominant_emotion', ''), placeholder="e.g. anxious, hopeful, calm...")
-        self_assessment = st.text_area("Self Assessment of the Day", value=e.get('self_assessment', ''), height=100, placeholder="How do you feel about today overall?")
+        col1, col2 = st.columns(2)
+        with col1:
+            phys_options = ["tired", "neutral", "energized"]
+            _pd = phys_options.index(e.get("physical_state")) if e.get("physical_state") in phys_options else 1
+            physical_state = st.selectbox("Physical State", phys_options, index=_pd, key="e_phys")
+        with col2:
+            ment_options = ["calm", "stable", "stressed", "heavy"]
+            _md = ment_options.index(e.get("mental_state")) if e.get("mental_state") in ment_options else 1
+            mental_state = st.selectbox("Mental State", ment_options, index=_md, key="e_ment")
 
         st.markdown('<hr class="divider">', unsafe_allow_html=True)
+        st.markdown('<div style="font-size:0.75rem;color:#555;font-family:\'JetBrains Mono\',monospace;margin-bottom:0.8rem;letter-spacing:1px;">THE DAY ITSELF</div>', unsafe_allow_html=True)
 
-        # --- Section B: Activity ---
-        st.markdown('<div style="font-size:0.75rem;color:#555;font-family:\'JetBrains Mono\',monospace;margin-bottom:0.8rem;letter-spacing:1px;">B · ACTIVITY SUMMARY</div>', unsafe_allow_html=True)
+        daily_summary = st.text_area("Daily Summary (facts — what happened)",
+                                     value=e.get("daily_summary") or "", height=90, key="e_summary")
+        good_deed = st.text_input("Good Deed of the Day", value=e.get("good_deed") or "",
+                                  placeholder="One good thing you did for someone…", key="e_deed")
 
-        daily_summary = st.text_area("Daily Summary", value=e.get('daily_summary', ''), height=100, placeholder="What happened today?")
-        good_deed = st.text_input("Good Deed of the Day", value=e.get('good_deed', ''), placeholder="One good thing you did for someone...")
-
-        # Accomplishments list
         st.markdown("**Accomplishments**")
         acc_col1, acc_col2 = st.columns([4, 1])
         with acc_col1:
-            new_acc = st.text_input("Add accomplishment", key="new_acc_input", label_visibility="collapsed", placeholder="What did you accomplish today?")
+            new_acc = st.text_input("Add accomplishment", key="new_acc_input",
+                                    label_visibility="collapsed", placeholder="What did you get done?")
         with acc_col2:
             if st.button("＋ Add", key="add_acc"):
                 if new_acc.strip():
                     st.session_state.accomplishments.append(new_acc.strip())
                     st.rerun()
-
         for i, acc in enumerate(st.session_state.accomplishments):
             c1, c2 = st.columns([6, 1])
             with c1:
@@ -830,56 +898,54 @@ elif page == "📝  Daily Log":
                     st.session_state.accomplishments.pop(i)
                     st.rerun()
 
-        st.markdown('<hr class="divider">', unsafe_allow_html=True)
+        if st.button("💾 Save Evening", type="primary", key="save_evening"):
+            fields = {
+                "evening_entry": evening_entry.strip(),
+                "gratitude": gratitude.strip(),
+                "mood_score": mood_score,
+                "mental_clarity": mental_clarity,
+                "dominant_emotion": dominant_emotion.strip(),
+                "physical_state": physical_state,
+                "mental_state": mental_state,
+                "daily_summary": daily_summary.strip(),
+                "good_deed": good_deed.strip(),
+                "accomplishments": st.session_state.accomplishments,
+                "evening_saved_at": "now()",
+            }
+            # keep old column populated so the Archive page keeps working
+            fields["self_assessment"] = evening_entry.strip()[:1000]
+            ok, err = _save_partial(fields)
+            if ok:
+                st.toast("🌙 Evening saved. Rest well — the archive remembers.")
+                st.rerun()
+            else:
+                st.error(f"Save failed: {err}")
 
-        # --- Section C: Health ---
-        st.markdown('<div style="font-size:0.75rem;color:#555;font-family:\'JetBrains Mono\',monospace;margin-bottom:0.8rem;letter-spacing:1px;">C · HEALTH</div>', unsafe_allow_html=True)
-
+    # ============================================================
+    # 📊 METRICS — spending, media, training
+    # ============================================================
+    with tab_metrics:
         col1, col2 = st.columns(2)
         with col1:
-            sleep_duration = st.number_input("Sleep Duration (hours)", min_value=0.0, max_value=24.0, step=0.5, value=float(e.get('sleep_duration') or 7.0))
-            phone_off = st.time_input("Phone Off Time", value=None)
+            phone_off = st.time_input("Phone Off Time", value=None, key="mt_phone_off")
+            daily_spending = st.number_input("Daily Spending Total (UZS)", min_value=0.0, step=1000.0,
+                                             value=float(e.get("daily_spending") or 0.0), key="mt_spend")
         with col2:
-            phone_on = st.time_input("Phone On Time", value=None)
-            dream_log = st.text_input("Dream Log (optional)", value=e.get('dream_log', ''), placeholder="Any dreams worth noting?")
-
-        col1, col2 = st.columns(2)
-        with col1:
-            phys_options = ["tired", "neutral", "energized"]
-            phys_default = phys_options.index(e.get('physical_state') if e.get('physical_state') in phys_options else 'neutral')
-            physical_state = st.selectbox("Physical State", phys_options, index=phys_default)
-            st.markdown(physical_badge(physical_state), unsafe_allow_html=True)
-        with col2:
-            ment_options = ["calm", "stable", "stressed", "heavy"]
-            ment_default = ment_options.index(e.get('mental_state') if e.get('mental_state') in ment_options else 'stable')
-            mental_state = st.selectbox("Mental State", ment_options, index=ment_default)
-            st.markdown(mental_badge(mental_state), unsafe_allow_html=True)
+            phone_on = st.time_input("Phone On Time", value=None, key="mt_phone_on")
+            spending_notes = st.text_input("Spending Notes", value=e.get("spending_notes") or "",
+                                           placeholder="What did you spend on?", key="mt_spend_notes")
 
         st.markdown('<hr class="divider">', unsafe_allow_html=True)
-
-        # --- Section D: Spending ---
-        st.markdown('<div style="font-size:0.75rem;color:#555;font-family:\'JetBrains Mono\',monospace;margin-bottom:0.8rem;letter-spacing:1px;">D · SPENDING</div>', unsafe_allow_html=True)
-
-        col1, col2 = st.columns(2)
-        with col1:
-            daily_spending = st.number_input("Daily Spending Total (UZS)", min_value=0.0, step=1000.0, value=float(e.get('daily_spending') or 0.0))
-        with col2:
-            spending_notes = st.text_input("Spending Notes", value=e.get('spending_notes', ''), placeholder="What did you spend on?")
-
-        st.markdown('<hr class="divider">', unsafe_allow_html=True)
-
-        # --- Section E: Media ---
-        st.markdown('<div style="font-size:0.75rem;color:#555;font-family:\'JetBrains Mono\',monospace;margin-bottom:0.8rem;letter-spacing:1px;">E · MEDIA CONSUMED</div>', unsafe_allow_html=True)
-
+        st.markdown('<div style="font-size:0.75rem;color:#555;font-family:\'JetBrains Mono\',monospace;margin-bottom:0.8rem;letter-spacing:1px;">MEDIA CONSUMED</div>', unsafe_allow_html=True)
         med_col1, med_col2 = st.columns([4, 1])
         with med_col1:
-            new_media = st.text_input("Add media", key="new_media_input", label_visibility="collapsed", placeholder="Anime / movie / series title...")
+            new_media = st.text_input("Add media", key="new_media_input", label_visibility="collapsed",
+                                      placeholder="Anime / movie / series title…")
         with med_col2:
             if st.button("＋ Add", key="add_media"):
                 if new_media.strip():
                     st.session_state.media_list.append(new_media.strip())
                     st.rerun()
-
         for i, m in enumerate(st.session_state.media_list):
             c1, c2 = st.columns([6, 1])
             with c1:
@@ -890,27 +956,24 @@ elif page == "📝  Daily Log":
                     st.rerun()
 
         st.markdown('<hr class="divider">', unsafe_allow_html=True)
+        st.markdown('<div style="font-size:0.75rem;color:#555;font-family:\'JetBrains Mono\',monospace;margin-bottom:0.8rem;letter-spacing:1px;">EXERCISE & TRAINING</div>', unsafe_allow_html=True)
 
-        # --- Section F: Exercise / Training ---
-        st.markdown('<div style="font-size:0.75rem;color:#555;font-family:\'JetBrains Mono\',monospace;margin-bottom:0.8rem;letter-spacing:1px;">F · EXERCISE & TRAINING</div>', unsafe_allow_html=True)
-
-        rest_day = st.checkbox("🛌 Rest day — no training today", value=e.get('rest_day', False))
-
+        rest_day = st.checkbox("🛌 Rest day — no training today", value=bool(e.get("rest_day")), key="mt_rest")
         if not rest_day:
-            # Workout list (type + label per item)
-            WORKOUT_TYPES = ["🥊 Boxing / MMA", "🏃 Cardio", "🏋️ Weights", "🧘 Mobility / Stretching", "⚽ Sport", "🤸 Calisthenics", "🥋 Martial Arts", "Other"]
+            WORKOUT_TYPES = ["🥊 Boxing / MMA", "🏃 Cardio", "🏋️ Weights", "🧘 Mobility / Stretching",
+                             "⚽ Sport", "🤸 Calisthenics", "🥋 Martial Arts", "Other"]
             st.markdown("**Sessions**")
             w_col1, w_col2, w_col3 = st.columns([2, 3, 1])
             with w_col1:
                 new_w_type = st.selectbox("Type", WORKOUT_TYPES, key="new_w_type", label_visibility="collapsed")
             with w_col2:
-                new_w_label = st.text_input("Session label", key="new_w_label", label_visibility="collapsed", placeholder="e.g. Sparring 3×3, Bench press 4×8...")
+                new_w_label = st.text_input("Session label", key="new_w_label", label_visibility="collapsed",
+                                            placeholder="e.g. Sparring 3×3, Bench 4×8…")
             with w_col3:
                 if st.button("＋ Add", key="add_workout"):
                     if new_w_label.strip():
                         st.session_state.workouts.append({"type": new_w_type, "label": new_w_label.strip()})
                         st.rerun()
-
             for i, w in enumerate(st.session_state.workouts):
                 wc1, wc2 = st.columns([6, 1])
                 with wc1:
@@ -922,73 +985,101 @@ elif page == "📝  Daily Log":
 
             col1, col2, col3 = st.columns(3)
             with col1:
-                training_duration = st.number_input("Total duration (min)", min_value=0, max_value=480, step=5,
-                                                    value=int(e.get('training_duration') or 0), key="training_duration")
+                training_duration = st.number_input("Total duration (min)", 0, 480, int(e.get("training_duration") or 0),
+                                                    step=5, key="mt_dur")
             with col2:
                 intensity_opts = ["easy", "moderate", "hard", "max"]
-                intensity_default = intensity_opts.index(e.get('training_intensity') if e.get('training_intensity') in intensity_opts else 'moderate')
-                training_intensity = st.selectbox("Intensity", intensity_opts, index=intensity_default)
+                _id = intensity_opts.index(e.get("training_intensity")) if e.get("training_intensity") in intensity_opts else 1
+                training_intensity = st.selectbox("Intensity", intensity_opts, index=_id, key="mt_int")
             with col3:
                 body_feel_opts = ["great", "good", "okay", "sore", "injured"]
-                body_feel_default = body_feel_opts.index(e.get('body_feel') if e.get('body_feel') in body_feel_opts else 'good')
-                body_feel = st.selectbox("Body Feel After", body_feel_opts, index=body_feel_default)
-
-            training_notes = st.text_input("Training Notes", value=e.get('training_notes', ''),
-                                           placeholder="PRs, observations, what to improve next time...")
+                _bd = body_feel_opts.index(e.get("body_feel")) if e.get("body_feel") in body_feel_opts else 1
+                body_feel = st.selectbox("Body Feel After", body_feel_opts, index=_bd, key="mt_body")
+            training_notes = st.text_input("Training Notes", value=e.get("training_notes") or "",
+                                           placeholder="PRs, observations, what to improve…", key="mt_notes")
         else:
-            training_duration = 0
-            training_intensity = None
-            body_feel = None
-            training_notes = ""
+            training_duration, training_intensity, body_feel, training_notes = 0, None, None, ""
 
-        st.markdown('<hr class="divider">', unsafe_allow_html=True)
-        if st.button("💾 Save Day", type="primary"):
-            if not dominant_emotion.strip():
-                st.error("Please enter your dominant emotion.")
+        # training streak
+        try:
+            _streak_logs = supabase.table("daily_logs").select("date,rest_day,training_duration") \
+                .order("date", desc=True).limit(60).execute().data or []
+            _tstreak = 0
+            for _sl in _streak_logs:
+                if not _sl.get("rest_day") and (_sl.get("training_duration") or 0) > 0:
+                    _tstreak += 1
+                else:
+                    break
+            if _tstreak >= 2:
+                st.markdown(f'<div style="font-size:0.95rem;color:#facc15;font-family:JetBrains Mono,monospace;">🔥 {_tstreak} day training streak</div>', unsafe_allow_html=True)
+        except Exception:
+            pass
+
+        if st.button("💾 Save Metrics", type="primary", key="save_metrics"):
+            ok, err = _save_partial({
+                "phone_off_time": str(phone_off) if phone_off else None,
+                "phone_on_time": str(phone_on) if phone_on else None,
+                "daily_spending": daily_spending,
+                "spending_notes": spending_notes.strip(),
+                "media_consumed": st.session_state.media_list,
+                "rest_day": rest_day,
+                "workouts": st.session_state.workouts if not rest_day else [],
+                "training_duration": training_duration if not rest_day else 0,
+                "training_intensity": training_intensity if not rest_day else None,
+                "body_feel": body_feel if not rest_day else None,
+                "training_notes": training_notes.strip() if not rest_day else "",
+            })
+            if ok:
+                st.toast("📊 Metrics saved.")
+                st.rerun()
             else:
-                record = {
-                    "date": str(today),
-                    "mood_score": mood_score,
-                    "mental_clarity": mental_clarity,
-                    "dominant_emotion": dominant_emotion.strip(),
-                    "self_assessment": self_assessment.strip(),
-                    "daily_summary": daily_summary.strip(),
-                    "accomplishments": st.session_state.accomplishments,
-                    "good_deed": good_deed.strip(),
-                    "sleep_duration": sleep_duration,
-                    "phone_off_time": str(phone_off) if phone_off else None,
-                    "phone_on_time": str(phone_on) if phone_on else None,
-                    "dream_log": dream_log.strip(),
-                    "physical_state": physical_state,
-                    "mental_state": mental_state,
-                    "daily_spending": daily_spending,
-                    "spending_notes": spending_notes.strip(),
-                    "media_consumed": st.session_state.media_list,
-                    "rest_day": rest_day,
-                    "workouts": st.session_state.workouts if not rest_day else [],
-                    "training_duration": training_duration if not rest_day else 0,
-                    "training_intensity": training_intensity if not rest_day else None,
-                    "body_feel": body_feel if not rest_day else None,
-                    "training_notes": training_notes.strip() if not rest_day else "",
-                }
-                try:
-                    if already_logged:
-                        supabase.table("daily_logs").update(record).eq("date", str(today)).execute()
-                        st.success("✅ Entry updated.")
-                    else:
-                        supabase.table("daily_logs").insert(record).execute()
-                        st.success("✅ Day saved to your archive.")
-                    st.session_state.edit_mode = False
-                    st.session_state.accomplishments = []
-                    st.session_state.media_list = []
-                    st.session_state.workouts = []
-                    st.rerun()
-                except Exception as ex:
-                    st.error(f"Error saving: {ex}")
+                st.error(f"Save failed: {err}")
 
-        if already_logged and st.button("Cancel"):
-            st.session_state.edit_mode = False
-            st.rerun()
+    # ============================================================
+    # 📤 Share today's entry (only once something is saved)
+    # ============================================================
+    if e:
+        with st.expander("📤 Share / export today"):
+            def build_share_text(entry):
+                d = entry.get("date", str(today))
+                lines = [f"📅 *Life Archive — {d}*", ""]
+                if entry.get("intention"):
+                    lines += [f"🎯 Intention: {entry['intention']}"]
+                lines += [f"🧠 Mood: {entry.get('mood_score','—')}/10  |  Clarity: {entry.get('mental_clarity','—')}  |  Emotion: {entry.get('dominant_emotion','—')}",
+                          f"😴 Sleep: {entry.get('sleep_duration','—')}h", ""]
+                if entry.get("daily_summary"):
+                    lines += ["📝 *Summary*", entry["daily_summary"], ""]
+                accs = entry.get("accomplishments") or []
+                if accs:
+                    lines += ["✦ *Accomplishments*"] + [f"  • {a}" for a in accs] + [""]
+                if entry.get("gratitude"):
+                    lines += [f"🙏 Grateful for: {entry['gratitude']}", ""]
+                if entry.get("good_deed"):
+                    lines += [f"💛 Good deed: {entry['good_deed']}", ""]
+                if entry.get("rest_day"):
+                    lines += ["🛌 Rest day", ""]
+                elif entry.get("training_duration"):
+                    lines += [f"🏋️ Training — {entry.get('training_duration',0)} min | {(entry.get('training_intensity') or '').upper()}"]
+                    for w in (entry.get("workouts") or []):
+                        lines.append(f"  {w.get('type','')} {w.get('label','')}")
+                    lines.append("")
+                media = entry.get("media_consumed") or []
+                if media:
+                    lines += ["🎬 *Media*"] + [f"  • {m}" for m in media] + [""]
+                lines.append("— sent from Life Archive")
+                return "\n".join(lines)
+
+            share_text = build_share_text(e)
+            st.text_area("Copy to Telegram or your channel", value=share_text, height=280, key="share_export_box")
+            _dl_col, _tg_col = st.columns([1, 2])
+            with _dl_col:
+                import json as _json
+                st.download_button("⬇️ Download as JSON", data=_json.dumps(e, indent=2, default=str),
+                                   file_name=f"life_archive_{e.get('date', str(today))}.json",
+                                   mime="application/json", use_container_width=True)
+            with _tg_col:
+                tg_url = f"https://t.me/share/url?url=&text={share_text.replace(' ','%20').replace(chr(10),'%0A')[:2000]}"
+                st.markdown(f'<a href="{tg_url}" target="_blank" style="display:inline-block;width:100%;margin-top:0.3rem;padding:0.4rem 1.2rem;background:#2a2a4a;border:1px solid #a78bfa;border-radius:8px;color:#e8e0ff;text-decoration:none;font-family:JetBrains Mono,monospace;font-size:0.8rem;text-align:center;">📨 Open in Telegram</a>', unsafe_allow_html=True)
 
 elif page == "📖  Reading Log":
     st.markdown('<div class="section-header">📖 Reading Log</div>', unsafe_allow_html=True)
@@ -999,7 +1090,7 @@ elif page == "📖  Reading Log":
         all_books = supabase.table("books").select("*").order("created_at", desc=False).execute().data or []
         reading_books   = [b for b in all_books if b["status"] == "reading"]
         finished_books  = [b for b in all_books if b["status"] == "finished"]
-    except:
+    except Exception:
         all_books = reading_books = finished_books = []
 
     # ---- Tabs ----
@@ -1016,7 +1107,7 @@ elif page == "📖  Reading Log":
                 # Fetch sessions for this book
                 try:
                     sessions = supabase.table("reading_sessions").select("*").eq("book_id", book["id"]).order("session_date", desc=False).execute().data or []
-                except:
+                except Exception:
                     sessions = []
 
                 total_read = sum(s["pages_read"] for s in sessions)
@@ -1240,7 +1331,7 @@ elif page == "🚨  Life Event":
             if filter_type != "All":
                 query = query.eq("event_type", filter_type)
             events = query.execute().data or []
-        except:
+        except Exception:
             events = []
 
         if not events:
@@ -1389,7 +1480,7 @@ elif page == "🛍️  Purchase Tracker":
         try:
             all_purchases = supabase.table("purchases").select("*").eq("phase2_completed", False).order("purchase_date", desc=True).execute().data or []
             pending = [p for p in all_purchases if p.get("review_due_date") and p["review_due_date"] <= str(date.today())]
-        except:
+        except Exception:
             pending = []
 
         if not pending:
@@ -1444,7 +1535,7 @@ elif page == "🛍️  Purchase Tracker":
     elif view == "📋 All Purchases":
         try:
             all_purchases = supabase.table("purchases").select("*").order("purchase_date", desc=True).execute().data or []
-        except:
+        except Exception:
             all_purchases = []
 
         if not all_purchases:
@@ -1678,7 +1769,7 @@ elif page == "🎯  Goals":
     else:
         try:
             goals = supabase.table("goals").select("*").order("created_at", desc=False).execute().data or []
-        except:
+        except Exception:
             goals = []
 
         active_goals    = [g for g in goals if g["status"] == "active"]
@@ -1691,7 +1782,7 @@ elif page == "🎯  Goals":
             for g in active_goals + paused_goals + completed_goals:
                 try:
                     sessions = supabase.table("goal_sessions").select("*").eq("goal_id", g["id"]).order("session_date", desc=False).execute().data or []
-                except:
+                except Exception:
                     sessions = []
 
                 total_hours   = sum(s.get("duration_hours", 0) or 0 for s in sessions)
@@ -1845,7 +1936,7 @@ elif page == "💫  Wish List":
     if view == "💫 Passive Wishes":
         try:
             wishes = supabase.table("wishes").select("*").eq("status", "passive").order("created_at", desc=True).execute().data or []
-        except:
+        except Exception:
             wishes = []
 
         if not wishes:
@@ -2026,7 +2117,7 @@ elif page == "🏆  Outcomes":
             if filter_type:
                 query = query.eq("result_type", filter_type)
             outcomes = query.execute().data or []
-        except:
+        except Exception:
             outcomes = []
 
         if not outcomes:
@@ -2221,7 +2312,7 @@ elif page == "📜  Archive":
             if filter_type != "All":
                 query = query.eq("result_type", filter_type)
             entries = query.execute().data or []
-        except:
+        except Exception:
             entries = []
 
         if not entries:
@@ -2248,7 +2339,7 @@ elif page == "📜  Archive":
     elif archive_view == "📅 Daily Log History":
         try:
             logs = supabase.table("daily_logs").select("*").order("date", desc=True).execute().data or []
-        except:
+        except Exception:
             logs = []
 
         if not logs:
@@ -2341,7 +2432,7 @@ elif page == "📜  Archive":
             books = supabase.table("books").select("*").execute().data or []
             events = supabase.table("life_events").select("*").execute().data or []
             outcomes = supabase.table("outcomes").select("*").execute().data or []
-        except:
+        except Exception:
             logs = books = events = outcomes = []
 
         total_days = len(logs)
@@ -2435,7 +2526,7 @@ elif page == "🧠  Skills":
     if view == "📊 Active Skills":
         try:
             skills = supabase.table("skills").select("*").order("created_at", desc=False).execute().data or []
-        except:
+        except Exception:
             skills = []
 
         if not skills:
@@ -2444,7 +2535,7 @@ elif page == "🧠  Skills":
             for sk in skills:
                 try:
                     sessions = supabase.table("skill_sessions").select("*").eq("skill_id", sk["id"]).order("session_date", desc=False).execute().data or []
-                except:
+                except Exception:
                     sessions = []
 
                 total_hours = sum(s.get("duration_hours", 0) or 0 for s in sessions)
@@ -2604,13 +2695,17 @@ elif page == "⚙️  Settings":
 
     st.markdown("#### 🖼 Wallpaper")
 
-    current_wp = get_wallpaper()
-    if current_wp:
+    _wp_url_cur = get_setting("wallpaper_url")
+    _wp_b64_legacy = get_setting("wallpaper_b64") if not _wp_url_cur else None
+    if _wp_url_cur or _wp_b64_legacy:
         st.markdown('<span class="badge badge-green">✅ Wallpaper active</span>', unsafe_allow_html=True)
+        if _wp_b64_legacy:
+            st.caption("ℹ️ This wallpaper is stored the old way (base64 in the database). "
+                       "Re-upload it once to move it to fast Storage.")
         st.markdown("<br>", unsafe_allow_html=True)
 
     uploaded = st.file_uploader("Upload a wallpaper image", type=["jpg", "jpeg", "png", "webp"], label_visibility="collapsed")
-    st.caption("Any photo works — it's automatically resized and compressed before saving.")
+    st.caption("Any photo works — it's compressed, uploaded to Supabase Storage, and only a URL is saved. Fast loads, tiny database.")
 
     current_opacity = get_overlay_opacity()
     opacity = st.slider("Overlay darkness (how much to dim the wallpaper)", 0.2, 0.9, current_opacity, step=0.05)
@@ -2623,9 +2718,6 @@ elif page == "⚙️  Settings":
                 if uploaded:
                     _step = "reading image"
                     img_bytes = uploaded.read()
-                    # Re-encode with Pillow: normalizes odd formats (HEIC-as-jpeg, CMYK,
-                    # PNG with alpha, etc.), resizes to a sane width, and compresses so the
-                    # database write stays small and reliable.
                     _step = "compressing image"
                     try:
                         from PIL import Image
@@ -2642,41 +2734,62 @@ elif page == "⚙️  Settings":
                         img_bytes = _out.getvalue()
                     except Exception as _pil_ex:
                         st.caption(f"(compression skipped: {_pil_ex})")
-                    _step = f"encoding image ({len(img_bytes):,} bytes)"
-                    b64 = base64.b64encode(img_bytes).decode("utf-8")
-                    _step = f"saving wallpaper to database ({len(b64):,} chars)"
+
+                    _step = f"uploading to Storage ({len(img_bytes):,} bytes)"
+                    _fname = "wallpaper.jpg"
+                    supabase.storage.from_(WALLPAPER_BUCKET).upload(
+                        _fname, img_bytes,
+                        {"content-type": "image/jpeg", "upsert": "true"},
+                    )
+                    _step = "getting public URL"
+                    _pub = supabase.storage.from_(WALLPAPER_BUCKET).get_public_url(_fname)
+                    # cache-bust so the browser fetches the new image, not yesterday's
+                    _pub = f"{_pub.split('?')[0]}?v={int(__import__('time').time())}"
+
+                    _step = "saving wallpaper URL to settings"
                     supabase.table("settings").upsert(
-                        {"key": "wallpaper_b64", "value": b64},
-                        on_conflict="key"
+                        {"key": "wallpaper_url", "value": _pub}, on_conflict="key"
                     ).execute()
+                    # remove the old heavy base64 row if it exists
+                    try:
+                        supabase.table("settings").delete().eq("key", "wallpaper_b64").execute()
+                    except Exception:
+                        pass
+
                 _step = "saving overlay opacity"
                 supabase.table("settings").upsert(
-                    {"key": "overlay_opacity", "value": str(opacity)},
-                    on_conflict="key"
+                    {"key": "overlay_opacity", "value": str(opacity)}, on_conflict="key"
                 ).execute()
-                st.success("✅ Settings saved. Refresh the page to see your wallpaper.")
+
+                get_setting.clear()  # refresh cached settings immediately
+                st.toast("✅ Wallpaper saved.")
                 st.rerun()
             except Exception as ex:
                 st.error(f"❌ Failed while: **{_step}**")
-                # Surface the real Supabase error details, not just a generic 400
                 _msg = getattr(ex, "message", None) or str(ex)
                 _code = getattr(ex, "code", None)
                 _hint = getattr(ex, "hint", None)
                 _details = getattr(ex, "details", None)
                 st.code(f"message: {_msg}\ncode: {_code}\nhint: {_hint}\ndetails: {_details}")
     with col2:
-        if current_wp and st.button("🗑️ Remove Wallpaper"):
+        if (_wp_url_cur or _wp_b64_legacy) and st.button("🗑️ Remove Wallpaper"):
             try:
-                supabase.table("settings").delete().eq("key", "wallpaper_b64").execute()
-                st.success("✅ Wallpaper removed.")
+                supabase.table("settings").delete().in_("key", ["wallpaper_url", "wallpaper_b64"]).execute()
+                try:
+                    supabase.storage.from_(WALLPAPER_BUCKET).remove(["wallpaper.jpg"])
+                except Exception:
+                    pass
+                get_setting.clear()
+                st.toast("🗑️ Wallpaper removed.")
                 st.rerun()
             except Exception as ex:
                 st.error(f"Error: {ex}")
 
-    if current_wp:
+    if _wp_url_cur or _wp_b64_legacy:
+        _prev_src = _wp_url_cur or f"data:image/jpeg;base64,{_wp_b64_legacy}"
         st.markdown('<hr class="divider">', unsafe_allow_html=True)
         st.markdown("**Current wallpaper preview:**")
-        st.markdown(f'<div style="width:100%;height:120px;background-image:url(\'data:image/jpeg;base64,{current_wp}\');background-size:cover;background-position:center;border-radius:8px;border:1px solid #2a2a4a;"></div>', unsafe_allow_html=True)
+        st.markdown(f'<div style="width:100%;height:120px;background-image:url(\'{_prev_src}\');background-size:cover;background-position:center;border-radius:8px;border:1px solid #2a2a4a;"></div>', unsafe_allow_html=True)
 
     # ============================================================
     # EXPORT ALL DATA
@@ -2851,15 +2964,22 @@ elif page == "⚙️  Settings":
         with st.spinner(f"Fetching all data and generating {_chosen_fmt}..."):
             _tables, _errors = _fetch_all_tables()
             _ext, _mime, _gen_fn = _fmt_map[_chosen_fmt]
-            _file_bytes = _gen_fn(_tables)
-            _total_rows = sum(len(v) for v in _tables.values())
-        if _errors:
-            st.warning(f"Some tables had issues: {'; '.join(_errors)}")
+            st.session_state["export_pkg"] = {
+                "bytes": _gen_fn(_tables),
+                "ext": _ext, "mime": _mime, "fmt": _chosen_fmt,
+                "rows": sum(len(v) for v in _tables.values()),
+                "errors": _errors,
+            }
+
+    _pkg = st.session_state.get("export_pkg")
+    if _pkg:
+        if _pkg["errors"]:
+            st.warning(f"Some tables had issues: {'; '.join(_pkg['errors'])}")
         st.download_button(
-            label=f"⬇️ Download {_chosen_fmt} ({_total_rows} rows)",
-            data=_file_bytes,
-            file_name=f"life_archive_full_{date.today()}.{_ext}",
-            mime=_mime,
+            label=f"⬇️ Download {_pkg['fmt']} ({_pkg['rows']} rows)",
+            data=_pkg["bytes"],
+            file_name=f"life_archive_full_{date.today()}.{_pkg['ext']}",
+            mime=_pkg["mime"],
             use_container_width=True,
         )
 
@@ -2912,8 +3032,9 @@ elif page == "⚙️  Settings":
                     try:
                         rows = supabase.table(t).select(idcol).execute().data or []
                         ids = [r[idcol] for r in rows]
-                        if ids:
-                            supabase.table(t).delete().in_(idcol, ids).execute()
+                        # delete in batches so huge tables don't blow the request size limit
+                        for _b in range(0, len(ids), 200):
+                            supabase.table(t).delete().in_(idcol, ids[_b:_b+200]).execute()
                         results.append((t, len(ids), None))
                         total_deleted += len(ids)
                     except Exception as ex:
