@@ -3,4 +3,4 @@ supabase
 openpyxl
 reportlab
 python-docx
- 
+Pillow
