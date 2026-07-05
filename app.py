@@ -1268,23 +1268,22 @@ elif page == "🚨  Life Event":
                     "other":          "badge-grey"
                 }
                 type_badge = f'<span class="badge {type_colors.get(e["event_type"], "badge-grey")}">{e["event_type"]}</span>'
+                people_html = f'<div style="margin-top:0.3rem;color:#888;font-size:0.82rem;">👥 {e["people_involved"]}</div>' if e.get('people_involved') else ''
+                change_html = f'<div style="margin-top:0.3rem;color:#666;font-size:0.82rem;font-style:italic;">🔄 {e["would_change"]}</div>' if e.get('would_change') else ''
 
-                st.markdown(f"""
-                <div class="card" style="border-left: 3px solid {border_color}; margin-bottom:1rem;">
-                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;">
-                        <span style="font-size:1rem;font-weight:800;color:#fff;">{e['event_title']}</span>
-                        <div style="display:flex;gap:0.5rem;align-items:center;">
-                            {type_badge}
-                            {significance_badge(sig)}
-                        </div>
-                    </div>
-                    <div style="color:#ccc;font-size:0.9rem;margin-bottom:0.5rem;">{e.get('event_description','')}</div>
-                    <div style="color:#888;font-size:0.85rem;font-style:italic;">💭 {e.get('emotional_impact','')}</div>
-                    {f'<div style="margin-top:0.3rem;color:#888;font-size:0.82rem;">👥 {e["people_involved"]}</div>' if e.get('people_involved') else ''}
-                    {f'<div style="margin-top:0.3rem;color:#666;font-size:0.82rem;font-style:italic;">🔄 {e["would_change"]}</div>' if e.get('would_change') else ''}
-                    <div style="margin-top:0.5rem;font-size:0.75rem;color:#555;font-family:'JetBrains Mono',monospace;">{e.get('event_date','')}</div>
-                </div>
-                """, unsafe_allow_html=True)
+                le_card = (
+                    f'<div class="card" style="border-left: 3px solid {border_color}; margin-bottom:1rem;">'
+                    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;">'
+                    f'<span style="font-size:1rem;font-weight:800;color:#fff;">{e["event_title"]}</span>'
+                    f'<div style="display:flex;gap:0.5rem;align-items:center;">{type_badge} {significance_badge(sig)}</div>'
+                    '</div>'
+                    f'<div style="color:#ccc;font-size:0.9rem;margin-bottom:0.5rem;">{e.get("event_description","")}</div>'
+                    f'<div style="color:#888;font-size:0.85rem;font-style:italic;">💭 {e.get("emotional_impact","")}</div>'
+                    f'{people_html}{change_html}'
+                    f'<div style="margin-top:0.5rem;font-size:0.75rem;color:#555;font-family:\'JetBrains Mono\',monospace;">{e.get("event_date","")}</div>'
+                    '</div>'
+                )
+                st.markdown(le_card, unsafe_allow_html=True)
                 col_edit, col_del = st.columns([1, 1])
                 with col_edit:
                     if st.button("✏️ Edit", key=f"edit_event_{e['id']}"):
@@ -1480,6 +1479,32 @@ elif page == "🛍️  Purchase Tracker":
                             <div style="font-size:0.8rem;color:{_diff_color};font-family:'JetBrains Mono',monospace;">{_diff_str} vs last month</div>
                         </div>
                         """, unsafe_allow_html=True)
+
+            # This-month category breakdown (by number of purchases — currency-agnostic)
+            _month_p = [p for p in all_purchases if str(p.get("purchase_date","")).startswith(_this_month)]
+            if _month_p:
+                from collections import Counter as _Counter
+                _cat_counts = _Counter(p.get("category","other") for p in _month_p)
+                _max_c = max(_cat_counts.values())
+                _cat_colors = {"food":"#4ade80","clothing":"#c084fc","tech":"#818cf8",
+                               "entertainment":"#facc15","transport":"#60a5fa","other":"#888"}
+                _bars = ""
+                for _cat, _cnt in _cat_counts.most_common():
+                    _pct = int((_cnt / _max_c) * 100) if _max_c else 0
+                    _col = _cat_colors.get(_cat, "#a78bfa")
+                    _bars += (
+                        '<div style="margin-bottom:0.45rem;">'
+                        '<div style="display:flex;justify-content:space-between;font-size:0.78rem;color:#aaa;margin-bottom:2px;">'
+                        f'<span>{_cat}</span><span>{_cnt}</span></div>'
+                        '<div style="background:#1a1a3a;border-radius:4px;height:8px;overflow:hidden;">'
+                        f'<div style="width:{_pct}%;height:100%;background:{_col};"></div></div>'
+                        '</div>'
+                    )
+                st.markdown(
+                    '<div class="card"><div style="font-size:0.72rem;color:#555;font-family:\'JetBrains Mono\',monospace;letter-spacing:1px;margin-bottom:0.7rem;">THIS MONTH BY CATEGORY · purchases</div>'
+                    + _bars + '</div>',
+                    unsafe_allow_html=True
+                )
             for p in all_purchases:
                 currency = p.get("currency", "UZS")
                 if not p.get("phase2_completed"):
@@ -1492,21 +1517,20 @@ elif page == "🛍️  Purchase Tracker":
                     border = "#f87171"
                     status_badge = '<span class="badge badge-red">❌ Not Worth It</span>'
 
-                st.markdown(f"""
-                <div class="card" style="border-left: 3px solid {border};">
-                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.4rem;">
-                        <span style="font-weight:800;color:#fff;">{p['item_name']}</span>
-                        <div style="display:flex;gap:0.5rem;">
-                            {status_badge}
-                            <span class="badge badge-grey">{p.get('category','')}</span>
-                        </div>
-                    </div>
-                    <div style="font-size:0.85rem;color:#888;font-family:'JetBrains Mono',monospace;">
-                        {p.get('amount',0):,.0f} {currency} · {p.get('purchase_date','')} · {p.get('emotional_state_post_purchase','')}
-                    </div>
-                    {f'<div style="margin-top:0.4rem;font-size:0.8rem;color:#666;">💭 {p["review_reflection"]}</div>' if p.get("review_reflection") else ''}
-                </div>
-                """, unsafe_allow_html=True)
+                refl_html = f'<div style="margin-top:0.4rem;font-size:0.8rem;color:#666;">💭 {p["review_reflection"]}</div>' if p.get("review_reflection") else ''
+                p_card = (
+                    f'<div class="card" style="border-left: 3px solid {border};">'
+                    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.4rem;">'
+                    f'<span style="font-weight:800;color:#fff;">{p["item_name"]}</span>'
+                    f'<div style="display:flex;gap:0.5rem;">{status_badge}<span class="badge badge-grey">{p.get("category","")}</span></div>'
+                    '</div>'
+                    '<div style="font-size:0.85rem;color:#888;font-family:\'JetBrains Mono\',monospace;">'
+                    f'{p.get("amount",0):,.0f} {currency} · {p.get("purchase_date","")} · {p.get("emotional_state_post_purchase","")}'
+                    '</div>'
+                    f'{refl_html}'
+                    '</div>'
+                )
+                st.markdown(p_card, unsafe_allow_html=True)
 
                 col_edit, col_del = st.columns([1, 1])
                 with col_edit:
@@ -1690,25 +1714,24 @@ elif page == "🎯  Goals":
                         pass
 
                 cat_badge = f'<span class="badge badge-grey">{g["category"]}</span>' if g.get("category") else ""
-                # Use variables to avoid nested f-string quote conflicts
+                # Build as ONE continuous HTML string — blank lines break Streamlit's HTML renderer
                 why_html   = f'<div style="font-size:0.82rem;color:#a78bfa;margin-bottom:0.3rem;">💡 {g["why"]}</div>' if g.get("why") else ""
                 notes_html = f'<div style="font-size:0.82rem;color:#666;margin-bottom:0.3rem;">📝 {g["progress_notes"]}</div>' if g.get("progress_notes") else ""
                 status_html = goal_status_badge(g["status"])
 
-                st.markdown(f"""
-                <div class="card">
-                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;">
-                        <span style="font-size:1.1rem;font-weight:800;color:#fff;">{g['goal_title']}</span>
-                        <div style="display:flex;gap:0.5rem;align-items:center;">
-                            {cat_badge} {deadline_badge} {status_html}
-                        </div>
-                    </div>
-                    {why_html}{notes_html}
-                    <div style="font-size:0.85rem;color:#888;font-family:'JetBrains Mono',monospace;">
-                        {len(sessions)} sessions · {total_hours:.1f} hrs total · avg enjoyment {avg_enjoyment:.1f}/5
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
+                card_html = (
+                    '<div class="card">'
+                    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;">'
+                    f'<span style="font-size:1.1rem;font-weight:800;color:#fff;">{g["goal_title"]}</span>'
+                    f'<div style="display:flex;gap:0.5rem;align-items:center;">{cat_badge} {deadline_badge} {status_html}</div>'
+                    '</div>'
+                    f'{why_html}{notes_html}'
+                    '<div style="font-size:0.85rem;color:#888;font-family:\'JetBrains Mono\',monospace;">'
+                    f'{len(sessions)} sessions · {total_hours:.1f} hrs total · avg enjoyment {avg_enjoyment:.1f}/5'
+                    '</div>'
+                    '</div>'
+                )
+                st.markdown(card_html, unsafe_allow_html=True)
 
                 if sessions:
                     with st.expander(f"🗂 {len(sessions)} past sessions"):
@@ -2587,6 +2610,7 @@ elif page == "⚙️  Settings":
         st.markdown("<br>", unsafe_allow_html=True)
 
     uploaded = st.file_uploader("Upload a wallpaper image", type=["jpg", "jpeg", "png", "webp"], label_visibility="collapsed")
+    st.caption("Any photo works — it's automatically resized and compressed before saving.")
 
     current_opacity = get_overlay_opacity()
     opacity = st.slider("Overlay darkness (how much to dim the wallpaper)", 0.2, 0.9, current_opacity, step=0.05)
@@ -2594,16 +2618,52 @@ elif page == "⚙️  Settings":
     col1, col2 = st.columns(2)
     with col1:
         if st.button("💾 Save Wallpaper", type="primary"):
+            _step = "start"
             try:
                 if uploaded:
+                    _step = "reading image"
                     img_bytes = uploaded.read()
+                    # Re-encode with Pillow: normalizes odd formats (HEIC-as-jpeg, CMYK,
+                    # PNG with alpha, etc.), resizes to a sane width, and compresses so the
+                    # database write stays small and reliable.
+                    _step = "compressing image"
+                    try:
+                        from PIL import Image
+                        import io as _io
+                        _im = Image.open(_io.BytesIO(img_bytes))
+                        if _im.mode not in ("RGB", "L"):
+                            _im = _im.convert("RGB")
+                        _max_w = 1920
+                        if _im.width > _max_w:
+                            _ratio = _max_w / _im.width
+                            _im = _im.resize((_max_w, int(_im.height * _ratio)))
+                        _out = _io.BytesIO()
+                        _im.save(_out, format="JPEG", quality=82, optimize=True)
+                        img_bytes = _out.getvalue()
+                    except Exception as _pil_ex:
+                        st.caption(f"(compression skipped: {_pil_ex})")
+                    _step = f"encoding image ({len(img_bytes):,} bytes)"
                     b64 = base64.b64encode(img_bytes).decode("utf-8")
-                    supabase.table("settings").upsert({"key": "wallpaper_b64", "value": b64}).execute()
-                supabase.table("settings").upsert({"key": "overlay_opacity", "value": str(opacity)}).execute()
+                    _step = f"saving wallpaper to database ({len(b64):,} chars)"
+                    supabase.table("settings").upsert(
+                        {"key": "wallpaper_b64", "value": b64},
+                        on_conflict="key"
+                    ).execute()
+                _step = "saving overlay opacity"
+                supabase.table("settings").upsert(
+                    {"key": "overlay_opacity", "value": str(opacity)},
+                    on_conflict="key"
+                ).execute()
                 st.success("✅ Settings saved. Refresh the page to see your wallpaper.")
                 st.rerun()
             except Exception as ex:
-                st.error(f"Error: {ex}")
+                st.error(f"❌ Failed while: **{_step}**")
+                # Surface the real Supabase error details, not just a generic 400
+                _msg = getattr(ex, "message", None) or str(ex)
+                _code = getattr(ex, "code", None)
+                _hint = getattr(ex, "hint", None)
+                _details = getattr(ex, "details", None)
+                st.code(f"message: {_msg}\ncode: {_code}\nhint: {_hint}\ndetails: {_details}")
     with col2:
         if current_wp and st.button("🗑️ Remove Wallpaper"):
             try:
