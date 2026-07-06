@@ -480,6 +480,39 @@ if page == "🏠  Home":
     st.markdown("<h1 style='font-family:Syne,sans-serif;font-size:2.2rem;font-weight:800;color:#e8e0ff;'>Welcome back, Captain 🫡</h1>", unsafe_allow_html=True)
     st.markdown(f'<div class="section-sub">Today is {date.today().strftime("%A, %B %d %Y")} · Your archive is running.</div>', unsafe_allow_html=True)
 
+    # ---- ✉️ letters from past you ----
+    if st.session_state.get("reading_letter"):
+        L = st.session_state["reading_letter"]
+        st.markdown(f"""
+        <div class="card" style="border-color:#facc15;">
+            <div style="font-size:0.7rem;color:#3a3a6a;font-family:'JetBrains Mono',monospace;">✉️ FROM YOU, {L.get('written_date','?')}</div>
+            <div class="chivalry" style="margin-top:0.6rem;line-height:1.9;white-space:pre-wrap;">{L.get('body','')}</div>
+        </div>""", unsafe_allow_html=True)
+        if st.button("Put the letter away", key="close_letter"):
+            st.session_state.pop("reading_letter", None)
+            st.rerun()
+    else:
+        try:
+            _unopened = supabase.table("letters").select("*").eq("opened", False) \
+                .lte("unlock_date", str(date.today())).execute().data or []
+        except Exception:
+            _unopened = []
+        for L in _unopened[:3]:
+            _lc1, _lc2 = st.columns([3, 1])
+            with _lc1:
+                st.markdown(f"""
+                <div class="card" style="border-color:#facc15;">
+                    ✉️ <b>You have a letter from past you</b> — written {L.get('written_date','?')}, unlocked today.
+                </div>""", unsafe_allow_html=True)
+            with _lc2:
+                if st.button("Open it", key=f"open_letter_{L.get('id')}", use_container_width=True, type="primary"):
+                    try:
+                        supabase.table("letters").update({"opened": True}).eq("id", L["id"]).execute()
+                    except Exception:
+                        pass
+                    st.session_state["reading_letter"] = L
+                    st.rerun()
+
     try:
         total_logs     = supabase.table("daily_logs").select("id", count="exact").execute().count or 0
         total_goals    = supabase.table("goals").select("id", count="exact").execute().count or 0
@@ -757,6 +790,49 @@ elif page == "📝  Daily Log":
     # 🌅 MORNING — write when you wake up
     # ============================================================
     with tab_morning:
+        # ---- morning kotowaza card (inserted at top of Morning tab) ----
+        KOTOWAZA = [
+            ("七転び八起き", "nana korobi ya oki", "Fall seven times, get up eight."),
+            ("継続は力なり", "keizoku wa chikara nari", "Persistence is power."),
+            ("塵も積もれば山となる", "chiri mo tsumoreba yama to naru", "Even dust, piled up, becomes a mountain."),
+            ("石の上にも三年", "ishi no ue ni mo sannen", "Three years sitting on a stone — perseverance warms even rock."),
+            ("初心忘るべからず", "shoshin wasuru bekarazu", "Never forget your beginner's spirit."),
+            ("案ずるより産むが易し", "anzuru yori umu ga yasushi", "Doing it is easier than worrying about it."),
+            ("明日は明日の風が吹く", "ashita wa ashita no kaze ga fuku", "Tomorrow, tomorrow's wind will blow."),
+            ("猿も木から落ちる", "saru mo ki kara ochiru", "Even monkeys fall from trees."),
+            ("急がば回れ", "isogaba maware", "When in a hurry, take the longer, surer road."),
+            ("千里の道も一歩から", "senri no michi mo ippo kara", "A thousand-mile road begins with a single step."),
+            ("好きこそ物の上手なれ", "suki koso mono no jōzu nare", "What you love, you will become good at."),
+            ("花より団子", "hana yori dango", "Dumplings over flowers — substance over appearance."),
+            ("出る杭は打たれる", "deru kui wa utareru", "The stake that sticks out gets hammered down."),
+            ("井の中の蛙大海を知らず", "i no naka no kawazu taikai wo shirazu", "A frog in a well knows nothing of the ocean."),
+            ("二兎を追う者は一兎をも得ず", "nito wo ou mono wa itto wo mo ezu", "Chase two hares and you'll catch neither."),
+            ("失敗は成功のもと", "shippai wa seikō no moto", "Failure is the foundation of success."),
+            ("時は金なり", "toki wa kane nari", "Time is money."),
+            ("笑う門には福来る", "warau kado ni wa fuku kitaru", "Fortune comes to a laughing gate."),
+            ("覆水盆に返らず", "fukusui bon ni kaerazu", "Spilled water never returns to the tray."),
+            ("百聞は一見に如かず", "hyakubun wa ikken ni shikazu", "Hearing a hundred times can't match seeing once."),
+            ("能ある鷹は爪を隠す", "nō aru taka wa tsume wo kakusu", "The skilled hawk hides its talons."),
+            ("雨降って地固まる", "ame futte ji katamaru", "After the rain, the ground grows firm."),
+            ("光陰矢の如し", "kōin ya no gotoshi", "Time flies like an arrow."),
+            ("一期一会", "ichigo ichie", "One time, one meeting — treasure every encounter."),
+            ("温故知新", "onko chishin", "Study the old to understand the new."),
+            ("思い立ったが吉日", "omoitatta ga kichijitsu", "The day you decide is your lucky day."),
+            ("良薬は口に苦し", "ryōyaku wa kuchi ni nigashi", "Good medicine tastes bitter."),
+            ("塞翁が馬", "saiō ga uma", "The old man's horse — fortune and misfortune trade places."),
+            ("蒔かぬ種は生えぬ", "makanu tane wa haenu", "Seeds you never sow will never grow."),
+            ("猫に小判", "neko ni koban", "Gold coins to a cat — value is wasted on those who can't see it."),
+            ("為せば成る", "naseba naru", "If you act, it will become — where there's a will, there's a way."),
+        ]
+        _kj, _kr, _km = KOTOWAZA[today.toordinal() % len(KOTOWAZA)]
+        st.markdown(f"""
+        <div class="card" style="border-color:#2a2a4a;">
+            <div style="font-size:0.7rem;color:#3a3a6a;font-family:'JetBrains Mono',monospace;letter-spacing:1px;">今日のことわざ · KOTOWAZA OF THE DAY</div>
+            <div style="font-size:1.25rem;color:#e8e0ff;margin-top:0.4rem;">{_kj}</div>
+            <div style="font-size:0.85rem;color:#a78bfa;font-family:'JetBrains Mono',monospace;">{_kr}</div>
+            <div style="font-size:0.85rem;color:#9ca3af;font-style:italic;margin-top:0.2rem;">{_km}</div>
+        </div>""", unsafe_allow_html=True)
+
         # a whisper from last night
         try:
             from datetime import timedelta
@@ -811,11 +887,18 @@ elif page == "📝  Daily Log":
     # 🌙 EVENING — the 10–15 min self-talk
     # ============================================================
     with tab_evening:
+        intention_done = e.get("intention_done")
         if e.get("intention"):
             st.markdown(f"""
             <div style="border-left:3px solid #facc15;padding:0.5rem 1rem;font-size:0.9rem;color:#e8e0ff;">
-                🎯 This morning you said: <b>“{e['intention']}”</b> — did it happen?
-            </div><br>""", unsafe_allow_html=True)
+                🎯 This morning you said: <b>“{e['intention']}”</b>
+            </div>""", unsafe_allow_html=True)
+            _v_opts = ["— not answered", "✅ it happened", "❌ it slipped"]
+            _v_idx = 1 if intention_done is True else (2 if intention_done is False else 0)
+            _verdict = st.radio("Did it happen?", _v_opts, index=_v_idx, horizontal=True,
+                                label_visibility="collapsed", key="e_verdict")
+            intention_done = True if "✅" in _verdict else (False if "❌" in _verdict else None)
+            st.markdown("<br>", unsafe_allow_html=True)
 
         # ---- 15-minute self-talk timer ----
         with st.expander("⏱ Start your 15-minute reflection timer"):
@@ -854,6 +937,10 @@ elif page == "📝  Daily Log":
         gratitude = st.text_input("🙏 One thing you're grateful for today",
                                   value=e.get("gratitude") or "", key="e_gratitude",
                                   placeholder="Small counts. Plov counts.")
+
+        highlight = st.text_input("✨ Highlight of the day — one sentence to remember it by",
+                                  value=e.get("highlight") or "", key="e_highlight",
+                                  placeholder="If I remember only one thing from today, it's…")
 
         st.markdown('<hr class="divider">', unsafe_allow_html=True)
         st.markdown('<div style="font-size:0.75rem;color:#555;font-family:\'JetBrains Mono\',monospace;margin-bottom:0.8rem;letter-spacing:1px;">STATE CHECK</div>', unsafe_allow_html=True)
@@ -910,10 +997,39 @@ elif page == "📝  Daily Log":
                     st.session_state.accomplishments.pop(i)
                     st.rerun()
 
+        with st.expander("✉️ Write a letter to future you (optional)"):
+            st.caption("It stays sealed 🔒 until the unlock date, then appears on your Home page.")
+            letter_body = st.text_area("Letter", height=160, key="letter_body", label_visibility="collapsed",
+                                       placeholder="Dear future me…")
+            from datetime import timedelta as _lt_td
+            _l_col1, _l_col2 = st.columns([1, 1])
+            with _l_col1:
+                letter_unlock = st.date_input("Unlock date", value=today + _lt_td(days=180),
+                                              min_value=today + _lt_td(days=1), key="letter_unlock")
+            with _l_col2:
+                st.markdown("<br>", unsafe_allow_html=True)
+                if st.button("🔒 Seal the letter", key="seal_letter", use_container_width=True):
+                    if letter_body.strip():
+                        try:
+                            supabase.table("letters").insert({
+                                "written_date": str(today),
+                                "unlock_date": str(letter_unlock),
+                                "body": letter_body.strip(),
+                                "opened": False,
+                            }).execute()
+                            st.toast(f"✉️ Sealed until {letter_unlock}. Future you says thanks.")
+                            st.rerun()
+                        except Exception as ex:
+                            st.error(f"Couldn't seal the letter: {ex}")
+                    else:
+                        st.warning("The letter is empty.")
+
         if st.button("💾 Save Evening", type="primary", key="save_evening"):
             fields = {
                 "evening_entry": evening_entry.strip(),
                 "gratitude": gratitude.strip(),
+                "highlight": highlight.strip(),
+                "intention_done": intention_done,
                 "mood_score": mood_score,
                 "mental_clarity": mental_clarity,
                 "dominant_emotion": dominant_emotion.strip(),
@@ -2303,7 +2419,7 @@ elif page == "📜  Archive":
     st.markdown('<div class="section-header">📜 Archive</div>', unsafe_allow_html=True)
     st.markdown('<div class="section-sub">your life, browsable</div>', unsafe_allow_html=True)
 
-    _arch_opts = ["🏆 Win/Failure Archive", "📅 Daily Log History", "📊 Quick Stats"]
+    _arch_opts = ["📔 Diary", "🏆 Win/Failure Archive", "📅 Daily Log History", "📊 Quick Stats"]
     if "archive_view" not in st.session_state or st.session_state["archive_view"] not in _arch_opts:
         st.session_state["archive_view"] = "🏆 Win/Failure Archive"
     _arch_index = _arch_opts.index(st.session_state["archive_view"])
@@ -2348,6 +2464,149 @@ elif page == "📜  Archive":
     # ============================================================
     # DAILY LOG HISTORY
     # ============================================================
+    # ============================================================
+    # 📔 DIARY — read your life like a book
+    # ============================================================
+    elif archive_view == "📔 Diary":
+        import random as _random
+        from datetime import timedelta as _td
+
+        try:
+            _dlogs = supabase.table("daily_logs").select(
+                "date,intention,intention_done,morning_entry,evening_entry,gratitude,highlight,"
+                "mood_score,waking_mood,daily_summary"
+            ).order("date", desc=True).execute().data or []
+        except Exception as ex:
+            _dlogs = []
+            st.caption(f"⚠ couldn't load diary: {ex}")
+
+        # keep only days with something written
+        _pages = [l for l in _dlogs if l.get("morning_entry") or l.get("evening_entry")
+                  or l.get("gratitude") or l.get("highlight")]
+
+        # ---- header stats: entries · words · intention hit-rate ----
+        _dwords = sum(len(str(l.get(f) or "").split())
+                      for l in _pages for f in ("morning_entry", "evening_entry"))
+        _answered = [l for l in _dlogs if l.get("intention_done") is not None]
+        _hits = sum(1 for l in _answered if l.get("intention_done"))
+        _hit_rate = f"{round(100 * _hits / len(_answered))}%" if _answered else "—"
+        st.markdown(f"""
+        <div class="card" style="display:flex;gap:1.6rem;flex-wrap:wrap;align-items:center;">
+            <div><span style="font-family:'JetBrains Mono',monospace;font-size:1.4rem;font-weight:700;color:#a78bfa;">{len(_pages)}</span>
+                 <div class="metric-label">diary pages</div></div>
+            <div><span style="font-family:'JetBrains Mono',monospace;font-size:1.4rem;font-weight:700;color:#4ade80;">{_dwords:,}</span>
+                 <div class="metric-label">words</div></div>
+            <div><span style="font-family:'JetBrains Mono',monospace;font-size:1.4rem;font-weight:700;color:#facc15;">{_hit_rate}</span>
+                 <div class="metric-label">intention hit-rate</div></div>
+        </div>""", unsafe_allow_html=True)
+
+        # ---- which book are you reading? ----
+        _book_opts = ["📖 Full days", "🌅 Mornings only", "🌙 Evenings only", "✨ Highlight reel"]
+        _bk = st.radio("Book", _book_opts, horizontal=True, label_visibility="collapsed", key="diary_book")
+
+        def _diary_page(l, mode):
+            """Render one day as a journal page."""
+            _d = date.fromisoformat(l["date"]) if isinstance(l["date"], str) else l["date"]
+            _mood = l.get("mood_score")
+            _mood_txt = f" · mood {_mood}/10" if _mood is not None else ""
+            _verdict = ""
+            if l.get("intention"):
+                if l.get("intention_done") is True:
+                    _verdict = ' <span style="color:#4ade80;">✅</span>'
+                elif l.get("intention_done") is False:
+                    _verdict = ' <span style="color:#f87171;">❌</span>'
+            _parts = [f"""<div style="font-family:'Syne',sans-serif;font-size:1.15rem;font-weight:700;color:#e8e0ff;">
+                        {_d.strftime('%A, %B %d %Y')}<span style="font-size:0.8rem;color:#3a3a6a;font-family:'JetBrains Mono',monospace;">{_mood_txt}</span></div>"""]
+            if l.get("intention") and mode in ("full", "morning"):
+                _parts.append(f'<div style="margin-top:0.5rem;color:#facc15;font-size:0.9rem;">🎯 {l["intention"]}{_verdict}</div>')
+            if l.get("morning_entry") and mode in ("full", "morning"):
+                _parts.append(f'''<div style="margin-top:0.7rem;"><span style="font-size:0.7rem;color:#3a3a6a;font-family:'JetBrains Mono',monospace;letter-spacing:1px;">🌅 MORNING</span>
+                    <div class="chivalry" style="line-height:1.9;white-space:pre-wrap;margin-top:0.3rem;">{l["morning_entry"]}</div></div>''')
+            if l.get("evening_entry") and mode in ("full", "evening"):
+                _parts.append(f'''<div style="margin-top:0.7rem;"><span style="font-size:0.7rem;color:#3a3a6a;font-family:'JetBrains Mono',monospace;letter-spacing:1px;">🌙 EVENING</span>
+                    <div class="chivalry" style="line-height:1.9;white-space:pre-wrap;margin-top:0.3rem;">{l["evening_entry"]}</div></div>''')
+            if l.get("highlight") and mode in ("full", "evening"):
+                _parts.append(f'<div style="margin-top:0.7rem;color:#c084fc;">✨ {l["highlight"]}</div>')
+            if l.get("gratitude") and mode in ("full", "evening"):
+                _parts.append(f'<div style="margin-top:0.3rem;color:#4ade80;">🙏 {l["gratitude"]}</div>')
+            st.markdown(f'<div class="card" style="padding:1.4rem;">{"".join(_parts)}</div>', unsafe_allow_html=True)
+
+        if not _pages:
+            st.markdown("""
+            <div class="card" style="text-align:center;padding:2.5rem;">
+                <div style="font-size:2rem;">📔</div>
+                <div style="color:#9ca3af;">Your diary is empty — the first page is waiting in the Daily Log.</div>
+            </div>""", unsafe_allow_html=True)
+        elif _bk == "✨ Highlight reel":
+            # one line per day — a year of your life in 60 seconds
+            _hl = [l for l in _pages if l.get("highlight")]
+            if not _hl:
+                st.info("No highlights yet — add '✨ Highlight of the day' in your Evening Reflection.")
+            else:
+                _rows = "".join(
+                    f'''<div style="display:flex;gap:1rem;padding:0.45rem 0;border-bottom:1px solid #1a1a3a;">
+                        <span style="font-family:'JetBrains Mono',monospace;font-size:0.75rem;color:#3a3a6a;white-space:nowrap;">{l["date"]}</span>
+                        <span style="color:#e8e0ff;">✨ {l["highlight"]}</span></div>'''
+                    for l in _hl)
+                st.markdown(f'<div class="card">{_rows}</div>', unsafe_allow_html=True)
+        else:
+            _mode = {"📖 Full days": "full", "🌅 Mornings only": "morning", "🌙 Evenings only": "evening"}[_bk]
+            _visible = [l for l in _pages if
+                        (_mode == "full") or
+                        (_mode == "morning" and (l.get("morning_entry") or l.get("intention"))) or
+                        (_mode == "evening" and (l.get("evening_entry") or l.get("gratitude") or l.get("highlight")))]
+
+            # ---- random page + month filter ----
+            rc1, rc2 = st.columns([1, 2])
+            with rc1:
+                if st.button("🎲 Random page", use_container_width=True, key="diary_random"):
+                    if _visible:
+                        st.session_state["diary_random_date"] = _random.choice(_visible)["date"]
+                        st.rerun()
+            _months = sorted({str(l["date"])[:7] for l in _visible}, reverse=True)
+            with rc2:
+                _msel = st.selectbox("Month", ["All months"] + _months, label_visibility="collapsed", key="diary_month")
+
+            _rand_date = st.session_state.pop("diary_random_date", None)
+            if _rand_date:
+                st.markdown('<div class="section-sub">🎲 the dice chose this day:</div>', unsafe_allow_html=True)
+                _rl = next((l for l in _visible if l["date"] == _rand_date), None)
+                if _rl:
+                    _diary_page(_rl, _mode)
+                st.markdown('<hr class="divider">', unsafe_allow_html=True)
+
+            _shown = [l for l in _visible if _msel == "All months" or str(l["date"]).startswith(_msel)]
+            if not _shown:
+                st.info("No pages in this book yet.")
+            for l in _shown[:60]:
+                _diary_page(l, _mode)
+            if len(_shown) > 60:
+                st.caption(f"…and {len(_shown) - 60} more pages — pick a month above to browse them.")
+
+        # ---- ✉️ letters ----
+        st.markdown('<hr class="divider">', unsafe_allow_html=True)
+        with st.expander("✉️ Letters to future you"):
+            try:
+                _letters = supabase.table("letters").select("*").order("unlock_date", desc=False).execute().data or []
+            except Exception:
+                _letters = []
+            if not _letters:
+                st.caption("No letters yet — seal one from the Evening Reflection tab.")
+            for L in _letters:
+                _unlocked = str(L.get("unlock_date")) <= str(date.today())
+                if _unlocked:
+                    st.markdown(f"""
+                    <div class="card">
+                        <div style="font-size:0.7rem;color:#3a3a6a;font-family:'JetBrains Mono',monospace;">✉️ written {L.get('written_date','?')} · unlocked {L.get('unlock_date','?')}</div>
+                        <div class="chivalry" style="margin-top:0.5rem;line-height:1.9;white-space:pre-wrap;">{L.get('body','')}</div>
+                    </div>""", unsafe_allow_html=True)
+                else:
+                    st.markdown(f"""
+                    <div class="card" style="opacity:0.7;">
+                        <div style="font-size:0.9rem;color:#9ca3af;">🔒 Sealed letter — written {L.get('written_date','?')}, opens <b style="color:#facc15;">{L.get('unlock_date','?')}</b></div>
+                    </div>""", unsafe_allow_html=True)
+
+
     elif archive_view == "📅 Daily Log History":
         try:
             logs = supabase.table("daily_logs").select("*").order("date", desc=True).execute().data or []
@@ -2358,9 +2617,10 @@ elif page == "📜  Archive":
             st.info("No daily logs yet. Start with today's entry.")
         else:
             # Mood trend chart
-            chart_logs = list(reversed(logs))
+            # skip days where mood wasn't logged yet (partial saves leave it NULL)
+            chart_logs = [l for l in reversed(logs) if l.get("mood_score") is not None]
             dates = [l["date"] for l in chart_logs]
-            moods = [l.get("mood_score", 5) for l in chart_logs]
+            moods = [l["mood_score"] for l in chart_logs]
 
             svg_width = 800
             svg_height = 150
@@ -2464,7 +2724,8 @@ elif page == "📜  Archive":
             logs = books = events = outcomes = []
 
         total_days = len(logs)
-        avg_mood = (sum(l.get("mood_score", 0) for l in logs) / total_days) if total_days else 0
+        _mood_vals = [l["mood_score"] for l in logs if l.get("mood_score") is not None]
+        avg_mood = (sum(_mood_vals) / len(_mood_vals)) if _mood_vals else 0
 
         from collections import Counter
         emotions = [l.get("dominant_emotion","").strip().lower() for l in logs if l.get("dominant_emotion")]
