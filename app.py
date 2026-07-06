@@ -333,7 +333,10 @@ st.markdown(f"""
 # ============================================
 # BADGE HELPERS
 # ============================================
-def mood_badge(score: int) -> str:
+def mood_badge(score) -> str:
+    if score is None:
+        return '<span class="badge badge-grey">— not logged</span>'
+    score = int(score)
     if score >= 8:
         return f'<span class="badge badge-green">😊 {score}/10</span>'
     elif score >= 5:
@@ -341,32 +344,40 @@ def mood_badge(score: int) -> str:
     else:
         return f'<span class="badge badge-red">😔 {score}/10</span>'
 
-def clarity_badge(clarity: str) -> str:
+def clarity_badge(clarity) -> str:
+    clarity = clarity or "—"
     colors = {"sharp": "badge-green", "normal": "badge-blue", "foggy": "badge-orange"}
     icons  = {"sharp": "⚡", "normal": "🔵", "foggy": "🌫️"}
     return f'<span class="badge {colors.get(clarity,"badge-grey")}">{icons.get(clarity,"●")} {clarity}</span>'
 
-def physical_badge(state: str) -> str:
+def physical_badge(state) -> str:
+    state = state or "—"
     colors = {"energized": "badge-green", "neutral": "badge-blue", "tired": "badge-red"}
     icons  = {"energized": "⚡", "neutral": "🔵", "tired": "🔴"}
     return f'<span class="badge {colors.get(state,"badge-grey")}">{icons.get(state,"●")} {state}</span>'
 
-def mental_badge(state: str) -> str:
+def mental_badge(state) -> str:
+    state = state or "—"
     colors = {"calm": "badge-green", "stable": "badge-blue", "stressed": "badge-orange", "heavy": "badge-red"}
     icons  = {"calm": "🟢", "stable": "🔵", "stressed": "🟠", "heavy": "🔴"}
     return f'<span class="badge {colors.get(state,"badge-grey")}">{icons.get(state,"●")} {state}</span>'
 
-def result_badge(result: str) -> str:
+def result_badge(result) -> str:
+    result = result or "—"
     colors = {"win": "badge-green", "pass": "badge-blue", "fail": "badge-red", "complete": "badge-gold"}
     icons  = {"win": "🏆", "pass": "✅", "fail": "❌", "complete": "⭐"}
     return f'<span class="badge {colors.get(result,"badge-grey")}">{icons.get(result,"●")} {result.upper()}</span>'
 
-def goal_status_badge(status: str) -> str:
+def goal_status_badge(status) -> str:
+    status = status or "—"
     colors = {"active": "badge-green", "paused": "badge-grey", "completed": "badge-gold"}
     icons  = {"active": "🟢", "paused": "⏸️", "completed": "⭐"}
     return f'<span class="badge {colors.get(status,"badge-grey")}">{icons.get(status,"●")} {status.upper()}</span>'
 
-def significance_badge(score: int) -> str:
+def significance_badge(score) -> str:
+    if score is None:
+        return '<span class="badge badge-grey">— not rated</span>'
+    score = int(score)
     if score >= 5:
         return f'<span class="badge badge-gold">★★★★★ {score}/5</span>'
     elif score >= 4:
@@ -376,7 +387,8 @@ def significance_badge(score: int) -> str:
     else:
         return f'<span class="badge badge-grey">★★☆☆☆ {score}/5</span>'
 
-def skill_level_badge(level: str) -> str:
+def skill_level_badge(level) -> str:
+    level = level or "beginner"
     colors = {"beginner": "badge-blue", "intermediate": "badge-yellow", "advanced": "badge-orange", "master": "badge-gold"}
     return f'<span class="badge {colors.get(level,"badge-grey")}">⚡ {level.upper()}</span>'
 
@@ -1500,7 +1512,7 @@ elif page == "🛍️  Purchase Tracker":
                         </div>
                     </div>
                     <div style="font-size:0.85rem;color:#888;font-family:'JetBrains Mono',monospace;">
-                        {p.get('amount',0):,.0f} {currency} · bought {p.get('purchase_date','')} · expected: {p.get('expected_value','')}
+                        {(p.get('amount') or 0):,.0f} {currency} · bought {p.get('purchase_date','')} · expected: {p.get('expected_value','')}
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
@@ -2387,17 +2399,32 @@ elif page == "📜  Archive":
 
             # Browse by date
             for log in logs:
-                with st.expander(f"{log['date']} — Mood {log.get('mood_score','—')}/10"):
+                _mood_disp = log.get("mood_score") if log.get("mood_score") is not None else "—"
+                with st.expander(f"{log['date']} — Mood {_mood_disp}/10"):
                     col1, col2, col3 = st.columns(3)
                     with col1:
-                        st.markdown(f"**Mood** &nbsp; {mood_badge(log.get('mood_score',5))}", unsafe_allow_html=True)
+                        st.markdown(f"**Mood** &nbsp; {mood_badge(log.get('mood_score'))}", unsafe_allow_html=True)
                     with col2:
-                        st.markdown(f"**Clarity** &nbsp; {clarity_badge(log.get('mental_clarity','normal'))}", unsafe_allow_html=True)
+                        st.markdown(f"**Clarity** &nbsp; {clarity_badge(log.get('mental_clarity'))}", unsafe_allow_html=True)
                     with col3:
-                        st.markdown(f"**Emotion** &nbsp; `{log.get('dominant_emotion','—')}`")
+                        st.markdown(f"**Emotion** &nbsp; `{log.get('dominant_emotion') or '—'}`")
 
-                    st.markdown(f"**Self Assessment:** {log.get('self_assessment','—')}")
-                    st.markdown(f"**Daily Summary:** {log.get('daily_summary','—')}")
+                    # ---- Diary entries ----
+                    if log.get("intention"):
+                        st.markdown(f"🎯 **Intention:** {log['intention']}")
+                    if log.get("morning_entry"):
+                        st.markdown(f"""<div class="card"><div style="font-size:0.7rem;color:#3a3a6a;font-family:'JetBrains Mono',monospace;letter-spacing:1px;">🌅 MORNING PAGES</div>
+                        <div class="chivalry" style="margin-top:0.4rem;line-height:1.8;white-space:pre-wrap;">{log['morning_entry']}</div></div>""", unsafe_allow_html=True)
+                    if log.get("evening_entry"):
+                        st.markdown(f"""<div class="card"><div style="font-size:0.7rem;color:#3a3a6a;font-family:'JetBrains Mono',monospace;letter-spacing:1px;">🌙 EVENING REFLECTION</div>
+                        <div class="chivalry" style="margin-top:0.4rem;line-height:1.8;white-space:pre-wrap;">{log['evening_entry']}</div></div>""", unsafe_allow_html=True)
+                    if log.get("gratitude"):
+                        st.markdown(f"🙏 **Grateful for:** {log['gratitude']}")
+
+                    if log.get("self_assessment") and log.get("self_assessment") != log.get("evening_entry"):
+                        st.markdown(f"**Self Assessment:** {log['self_assessment']}")
+                    if log.get("daily_summary"):
+                        st.markdown(f"**Daily Summary:** {log['daily_summary']}")
 
                     accs = log.get('accomplishments') or []
                     if accs:
@@ -2413,15 +2440,16 @@ elif page == "📜  Archive":
 
                     col1, col2, col3, col4 = st.columns(4)
                     with col1:
-                        st.markdown(f"**Sleep** `{log.get('sleep_duration','—')} hrs`")
+                        st.markdown(f"**Sleep** `{log.get('sleep_duration') if log.get('sleep_duration') is not None else '—'} hrs`")
                     with col2:
-                        st.markdown(f"**Physical** {physical_badge(log.get('physical_state','neutral'))}", unsafe_allow_html=True)
+                        st.markdown(f"**Physical** {physical_badge(log.get('physical_state'))}", unsafe_allow_html=True)
                     with col3:
-                        st.markdown(f"**Mental** {mental_badge(log.get('mental_state','stable'))}", unsafe_allow_html=True)
+                        st.markdown(f"**Mental** {mental_badge(log.get('mental_state'))}", unsafe_allow_html=True)
                     with col4:
-                        st.markdown(f"**Spent** `{log.get('daily_spending',0):,.0f}`")
+                        st.markdown(f"**Spent** `{(log.get('daily_spending') or 0):,.0f}`")
 
-                    st.markdown(f"**Good deed:** {log.get('good_deed','—')}")
+                    if log.get("good_deed"):
+                        st.markdown(f"**Good deed:** {log['good_deed']}")
 
     # ============================================================
     # QUICK STATS
