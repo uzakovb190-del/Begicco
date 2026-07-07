@@ -497,6 +497,13 @@ if page == "🏠  Home":
                 .lte("unlock_date", str(date.today())).execute().data or []
         except Exception:
             _unopened = []
+        try:
+            _sealed_n = supabase.table("letters").select("id", count="exact") \
+                .gte("unlock_date", str(date.today() + __import__("datetime").timedelta(days=1))).execute().count or 0
+        except Exception:
+            _sealed_n = 0
+        if _sealed_n:
+            st.markdown(f'<div style="font-size:0.8rem;color:#9ca3af;font-family:\'JetBrains Mono\',monospace;">🔒 {_sealed_n} sealed letter{"s" if _sealed_n != 1 else ""} waiting for {"their" if _sealed_n != 1 else "its"} day</div>', unsafe_allow_html=True)
         for L in _unopened[:3]:
             _lc1, _lc2 = st.columns([3, 1])
             with _lc1:
@@ -662,11 +669,39 @@ elif page == "📝  Daily Log":
             st.caption(f"⚠ couldn't load today's entry: {ex}")
             return None
 
+    def _fetch_weather():
+        """Today's Tashkent weather from Open-Meteo (free, no key).
+        Returns (description, temp_c) or None — never blocks a save."""
+        try:
+            import requests
+            r = requests.get(
+                "https://api.open-meteo.com/v1/forecast",
+                params={"latitude": 41.2995, "longitude": 69.2401,
+                        "current": "temperature_2m,weather_code"},
+                timeout=4)
+            cur = r.json()["current"]
+            code, temp = int(cur["weather_code"]), round(float(cur["temperature_2m"]))
+            WMO = {0: "clear ☀️", 1: "mostly clear 🌤", 2: "partly cloudy ⛅", 3: "overcast ☁️",
+                   45: "fog 🌫", 48: "fog 🌫", 51: "drizzle 🌦", 53: "drizzle 🌦", 55: "drizzle 🌦",
+                   61: "rain 🌧", 63: "rain 🌧", 65: "heavy rain 🌧", 66: "freezing rain 🌧", 67: "freezing rain 🌧",
+                   71: "snow ❄️", 73: "snow ❄️", 75: "heavy snow ❄️", 77: "snow ❄️",
+                   80: "showers 🌦", 81: "showers 🌦", 82: "heavy showers ⛈",
+                   85: "snow showers ❄️", 86: "snow showers ❄️",
+                   95: "thunderstorm ⛈", 96: "thunderstorm ⛈", 99: "thunderstorm ⛈"}
+            return WMO.get(code, "—"), temp
+        except Exception:
+            return None
+
     def _save_partial(fields: dict):
         """Insert or update only the given columns for today — so saving the
-        morning never wipes the evening, and vice versa."""
+        morning never wipes the evening, and vice versa. Also silently stamps
+        today's weather the first time anything is saved."""
         try:
             existing_row = _load_day(today)
+            if not (existing_row and existing_row.get("weather_desc")):
+                _w = _fetch_weather()
+                if _w:
+                    fields = {**fields, "weather_desc": _w[0], "temp_c": _w[1]}
             if existing_row:
                 supabase.table("daily_logs").update(fields).eq("date", str(today)).execute()
             else:
@@ -836,7 +871,7 @@ elif page == "📝  Daily Log":
         # a whisper from last night
         try:
             from datetime import timedelta
-            _y = supabase.table("daily_logs").select("evening_entry,gratitude,intention") \
+            _y = supabase.table("daily_logs").select("evening_entry,gratitude,intention,intention_done") \
                 .eq("date", str(today - timedelta(days=1))).execute().data
         except Exception:
             _y = None
@@ -854,6 +889,21 @@ elif page == "📝  Daily Log":
         with col2:
             dream_log = st.text_area("Dream log (optional)", value=e.get("dream_log") or "", height=68,
                                      placeholder="Any dreams worth keeping?", key="m_dream")
+
+        # yesterday's intention didn't happen? offer to carry it forward
+        if (not e.get("intention")) and _y and _y[0].get("intention") and _y[0].get("intention_done") is not True:
+            _yint = _y[0]["intention"]
+            _cc1, _cc2 = st.columns([4, 1])
+            with _cc1:
+                st.markdown(f'<div style="border-left:3px solid #f87171;padding:0.5rem 1rem;font-size:0.85rem;color:#9ca3af;">yesterday\'s intention is still open: <b style="color:#e8e0ff;">“{_yint}”</b></div>', unsafe_allow_html=True)
+            with _cc2:
+                if st.button("↪ Carry it", key="carry_intention", use_container_width=True):
+                    ok, err = _save_partial({"intention": _yint})
+                    if ok:
+                        st.toast("🎯 Intention carried into today.")
+                        st.rerun()
+                    else:
+                        st.error(f"Couldn't carry it: {err}")
 
         intention = st.text_input("🎯 One intention for today",
                                   value=e.get("intention") or "",
@@ -1090,39 +1140,65 @@ elif page == "📝  Daily Log":
         if not rest_day:
             WORKOUT_TYPES = ["🥊 Boxing / MMA", "🏃 Cardio", "🏋️ Weights", "🧘 Mobility / Stretching",
                              "⚽ Sport", "🤸 Calisthenics", "🥋 Martial Arts", "Other"]
-            st.markdown("**Sessions**")
-            w_col1, w_col2, w_col3 = st.columns([2, 3, 1])
+            st.markdown("**Sessions** — each activity gets its own minutes")
+            w_col1, w_col2, w_col3, w_col4 = st.columns([2, 3, 1, 1])
             with w_col1:
                 new_w_type = st.selectbox("Type", WORKOUT_TYPES, key="new_w_type", label_visibility="collapsed")
             with w_col2:
                 new_w_label = st.text_input("Session label", key="new_w_label", label_visibility="collapsed",
-                                            placeholder="e.g. Sparring 3×3, Bench 4×8…")
+                                            placeholder="e.g. Sparring 3×3, football with bro…")
             with w_col3:
+                new_w_dur = st.number_input("min", 0, 480, 0, step=5, key="new_w_dur",
+                                            label_visibility="collapsed", help="Minutes for THIS session")
+            with w_col4:
                 if st.button("＋ Add", key="add_workout"):
                     if new_w_label.strip():
-                        st.session_state.workouts.append({"type": new_w_type, "label": new_w_label.strip()})
+                        st.session_state.workouts.append({"type": new_w_type, "label": new_w_label.strip(),
+                                                          "duration": int(new_w_dur or 0)})
                         st.rerun()
             for i, w in enumerate(st.session_state.workouts):
-                wc1, wc2 = st.columns([6, 1])
+                wc1, wc2, wc3 = st.columns([5, 1, 1])
                 with wc1:
                     st.markdown(f"&nbsp; {w['type']} &nbsp; `{w['label']}`")
                 with wc2:
+                    st.markdown(f'<div style="text-align:right;font-family:\'JetBrains Mono\',monospace;color:#a78bfa;padding-top:0.35rem;">{int(w.get("duration") or 0)} min</div>', unsafe_allow_html=True)
+                with wc3:
                     if st.button("✕", key=f"del_workout_{i}"):
                         st.session_state.workouts.pop(i)
                         st.rerun()
 
+            # total is computed from the sessions now — no more single shared field
+            training_duration = sum(int(w.get("duration") or 0) for w in st.session_state.workouts)
+            # legacy days saved before per-session durations: fall back to the stored total
+            if training_duration == 0 and st.session_state.workouts and e.get("training_duration"):
+                training_duration = int(e.get("training_duration") or 0)
+
             col1, col2, col3 = st.columns(3)
             with col1:
-                training_duration = st.number_input("Total duration (min)", 0, 480, int(e.get("training_duration") or 0),
-                                                    step=5, key="mt_dur")
+                st.markdown(f"""<div style="padding-top:0.3rem;">
+                    <span style="font-family:'JetBrains Mono',monospace;font-size:1.4rem;font-weight:700;color:#4ade80;">{training_duration}</span>
+                    <span style="color:#9ca3af;font-size:0.85rem;"> min total · {len(st.session_state.workouts)} session{"s" if len(st.session_state.workouts) != 1 else ""}</span>
+                </div>""", unsafe_allow_html=True)
             with col2:
                 intensity_opts = ["easy", "moderate", "hard", "max"]
                 _id = intensity_opts.index(e.get("training_intensity")) if e.get("training_intensity") in intensity_opts else 1
-                training_intensity = st.selectbox("Intensity", intensity_opts, index=_id, key="mt_int")
+                training_intensity = st.selectbox("Overall intensity", intensity_opts, index=_id, key="mt_int")
             with col3:
                 body_feel_opts = ["great", "good", "okay", "sore", "injured"]
                 _bd = body_feel_opts.index(e.get("body_feel")) if e.get("body_feel") in body_feel_opts else 1
                 body_feel = st.selectbox("Body Feel After", body_feel_opts, index=_bd, key="mt_body")
+
+            # this week at a glance
+            try:
+                from datetime import timedelta as _wk_td
+                _wk = supabase.table("daily_logs").select("date,training_duration,workouts") \
+                    .gte("date", str(today - _wk_td(days=6))).execute().data or []
+                _wk_min = sum(int(r.get("training_duration") or 0) for r in _wk if r.get("date") != str(today)) + training_duration
+                _wk_ses = sum(len(r.get("workouts") or []) for r in _wk if r.get("date") != str(today)) + len(st.session_state.workouts)
+                if _wk_min or _wk_ses:
+                    st.caption(f"📅 This week: **{_wk_min} min** across **{_wk_ses} session{'s' if _wk_ses != 1 else ''}**")
+            except Exception:
+                pass
             training_notes = st.text_input("Training Notes", value=e.get("training_notes") or "",
                                            placeholder="PRs, observations, what to improve…", key="mt_notes")
         else:
@@ -2474,7 +2550,7 @@ elif page == "📜  Archive":
         try:
             _dlogs = supabase.table("daily_logs").select(
                 "date,intention,intention_done,morning_entry,evening_entry,gratitude,highlight,"
-                "mood_score,waking_mood,daily_summary"
+                "mood_score,waking_mood,daily_summary,weather_desc,temp_c"
             ).order("date", desc=True).execute().data or []
         except Exception as ex:
             _dlogs = []
@@ -2500,6 +2576,66 @@ elif page == "📜  Archive":
                  <div class="metric-label">intention hit-rate</div></div>
         </div>""", unsafe_allow_html=True)
 
+        # ---- search + tags ----
+        import re as _re
+        def _page_text(l):
+            return " ".join(str(l.get(f) or "") for f in
+                            ("morning_entry", "evening_entry", "gratitude", "highlight",
+                             "intention", "daily_summary"))
+        _all_tags = sorted({t.lower() for l in _pages
+                            for t in _re.findall(r"#(\w+)", _page_text(l))})
+        _sc1, _sc2 = st.columns([3, 2])
+        with _sc1:
+            _q = st.text_input("Search", key="diary_search", label_visibility="collapsed",
+                               placeholder="🔍 Search your diary — a word, a name, a place…")
+        with _sc2:
+            _tag = st.selectbox("Tag", ["All tags"] + [f"#{t}" for t in _all_tags],
+                                label_visibility="collapsed", key="diary_tag")
+        if _q.strip():
+            _pages = [l for l in _pages if _q.strip().lower() in _page_text(l).lower()]
+        if _tag != "All tags":
+            _pages = [l for l in _pages
+                      if _tag[1:] in [t.lower() for t in _re.findall(r"#(\w+)", _page_text(l))]]
+        if _q.strip() or _tag != "All tags":
+            st.caption(f"{len(_pages)} page{'s' if len(_pages) != 1 else ''} match")
+
+        # ---- 🟪 Year in Pixels ----
+        with st.expander("🟪 Year in Pixels — your whole year, one glance"):
+            import calendar as _cal
+            _year = date.today().year
+            _by_date = {str(l["date"]): l for l in _dlogs}
+            def _pixel_color(l):
+                if l is None:
+                    return "#141430"                      # no entry
+                m = l.get("mood_score")
+                if m is None:
+                    return "#3a3a6a"                      # entry, mood not logged
+                scale = ["#7f1d1d", "#b91c1c", "#dc2626", "#ea580c", "#d97706",
+                         "#ca8a04", "#65a30d", "#16a34a", "#22c55e", "#4ade80"]
+                return scale[max(1, min(10, int(m))) - 1]
+            _rows_html = ""
+            for _m in range(1, 13):
+                _cells = ""
+                _ndays = _cal.monthrange(_year, _m)[1]
+                for _dd in range(1, 32):
+                    if _dd > _ndays:
+                        _cells += '<span style="display:inline-block;width:11px;height:11px;margin:1px;"></span>'
+                        continue
+                    _ds = f"{_year}-{_m:02d}-{_dd:02d}"
+                    _l = _by_date.get(_ds)
+                    _mood = _l.get("mood_score") if _l else None
+                    _tip = f"{_ds}" + (f" · mood {_mood}/10" if _mood is not None else (" · logged" if _l else ""))
+                    _cells += (f'<span title="{_tip}" style="display:inline-block;width:11px;height:11px;'
+                               f'margin:1px;border-radius:2px;background:{_pixel_color(_l)};"></span>')
+                _month_style = ('display:inline-block;width:34px;'
+                                "font-family:'JetBrains Mono',monospace;font-size:0.65rem;color:#3a3a6a;")
+                _rows_html += (f'<div style="white-space:nowrap;"><span style="{_month_style}">'
+                               f'{_cal.month_abbr[_m]}</span>{_cells}</div>')
+            st.markdown(f'<div class="card" style="overflow-x:auto;">{_rows_html}'
+                        f'<div style="margin-top:0.6rem;font-size:0.7rem;color:#3a3a6a;font-family:\'JetBrains Mono\',monospace;">'
+                        f'dark = unwritten · grey = logged, no mood · red→green = mood 1→10</div></div>',
+                        unsafe_allow_html=True)
+
         # ---- which book are you reading? ----
         _book_opts = ["📖 Full days", "🌅 Mornings only", "🌙 Evenings only", "✨ Highlight reel"]
         _bk = st.radio("Book", _book_opts, horizontal=True, label_visibility="collapsed", key="diary_book")
@@ -2509,6 +2645,9 @@ elif page == "📜  Archive":
             _d = date.fromisoformat(l["date"]) if isinstance(l["date"], str) else l["date"]
             _mood = l.get("mood_score")
             _mood_txt = f" · mood {_mood}/10" if _mood is not None else ""
+            if l.get("weather_desc"):
+                _t = l.get("temp_c")
+                _mood_txt += f" · {round(float(_t))}°C {l['weather_desc']}" if _t is not None else f" · {l['weather_desc']}"
             _verdict = ""
             if l.get("intention"):
                 if l.get("intention_done") is True:
@@ -2529,6 +2668,11 @@ elif page == "📜  Archive":
                 _parts.append(f'<div style="margin-top:0.7rem;color:#c084fc;">✨ {l["highlight"]}</div>')
             if l.get("gratitude") and mode in ("full", "evening"):
                 _parts.append(f'<div style="margin-top:0.3rem;color:#4ade80;">🙏 {l["gratitude"]}</div>')
+            import re as _re2
+            _ptags = sorted({t.lower() for t in _re2.findall(r"#(\w+)", _page_text(l))})
+            if _ptags:
+                _chips = " ".join(f'<span style="font-family:\'JetBrains Mono\',monospace;font-size:0.68rem;color:#a78bfa;background:#1a1a3a;border-radius:6px;padding:2px 7px;">#{t}</span>' for t in _ptags)
+                _parts.append(f'<div style="margin-top:0.8rem;">{_chips}</div>')
             st.markdown(f'<div class="card" style="padding:1.4rem;">{"".join(_parts)}</div>', unsafe_allow_html=True)
 
         if not _pages:
@@ -2594,17 +2738,38 @@ elif page == "📜  Archive":
                 st.caption("No letters yet — seal one from the Evening Reflection tab.")
             for L in _letters:
                 _unlocked = str(L.get("unlock_date")) <= str(date.today())
-                if _unlocked:
-                    st.markdown(f"""
-                    <div class="card">
-                        <div style="font-size:0.7rem;color:#3a3a6a;font-family:'JetBrains Mono',monospace;">✉️ written {L.get('written_date','?')} · unlocked {L.get('unlock_date','?')}</div>
-                        <div class="chivalry" style="margin-top:0.5rem;line-height:1.9;white-space:pre-wrap;">{L.get('body','')}</div>
-                    </div>""", unsafe_allow_html=True)
-                else:
-                    st.markdown(f"""
-                    <div class="card" style="opacity:0.7;">
-                        <div style="font-size:0.9rem;color:#9ca3af;">🔒 Sealed letter — written {L.get('written_date','?')}, opens <b style="color:#facc15;">{L.get('unlock_date','?')}</b></div>
-                    </div>""", unsafe_allow_html=True)
+                _lcard, _lctl = st.columns([7, 1])
+                with _lcard:
+                    if _unlocked:
+                        st.markdown(f"""
+                        <div class="card">
+                            <div style="font-size:0.7rem;color:#3a3a6a;font-family:'JetBrains Mono',monospace;">✉️ written {L.get('written_date','?')} · unlocked {L.get('unlock_date','?')}</div>
+                            <div class="chivalry" style="margin-top:0.5rem;line-height:1.9;white-space:pre-wrap;">{L.get('body','')}</div>
+                        </div>""", unsafe_allow_html=True)
+                    else:
+                        st.markdown(f"""
+                        <div class="card" style="opacity:0.7;">
+                            <div style="font-size:0.9rem;color:#9ca3af;">🔒 Sealed letter — written {L.get('written_date','?')}, opens <b style="color:#facc15;">{L.get('unlock_date','?')}</b></div>
+                        </div>""", unsafe_allow_html=True)
+                with _lctl:
+                    # two-step delete: 🗑 arms it, a second click confirms
+                    if st.session_state.get("letter_del_arm") == L.get("id"):
+                        if st.button("❗ sure?", key=f"letter_del_yes_{L.get('id')}", use_container_width=True):
+                            try:
+                                supabase.table("letters").delete().eq("id", L["id"]).execute()
+                                st.session_state.pop("letter_del_arm", None)
+                                st.toast("✉️ Letter deleted.")
+                                st.rerun()
+                            except Exception as ex:
+                                st.error(f"Couldn't delete: {ex}")
+                        if st.button("keep", key=f"letter_del_no_{L.get('id')}", use_container_width=True):
+                            st.session_state.pop("letter_del_arm", None)
+                            st.rerun()
+                    else:
+                        if st.button("🗑", key=f"letter_del_{L.get('id')}", use_container_width=True,
+                                     help="Delete this letter (asks to confirm)"):
+                            st.session_state["letter_del_arm"] = L.get("id")
+                            st.rerun()
 
 
     elif archive_view == "📅 Daily Log History":
